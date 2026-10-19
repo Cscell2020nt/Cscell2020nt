@@ -8,11 +8,13 @@ import { api } from './lib/api';
 import { dateLabel, integer, money, percent, shortMoney } from './lib/format';
 import { version } from '../package.json';
 import Imports from './pages/Imports';
+import Commissions from './pages/Commissions';
 import { FinancePage, GoalsPage, HistoryPage, InsightsPage, RankingPage, ReportsPage, SalesPage, SellersPage, SettingsPage, TicketPage } from './pages/Management';
 
-type Page = 'dashboard' | 'imports' | 'sales' | 'sellers' | 'goals' | 'ticket' | 'ranking' | 'finance' | 'insights' | 'reports' | 'history' | 'settings';
+type Page = 'commissions' | 'dashboard' | 'imports' | 'sales' | 'sellers' | 'goals' | 'ticket' | 'ranking' | 'finance' | 'insights' | 'reports' | 'history' | 'settings';
 const navigation: { id: Page; name: string; icon: typeof LayoutDashboard; admin?: boolean; group?: string }[] = [
   { id: 'dashboard', name: 'Dashboard geral', icon: LayoutDashboard, group: 'VISÃO DO NEGÓCIO' },
+  { id: 'commissions', name: 'Produtos e comissão', icon: Smartphone },
   { id: 'sales', name: 'Vendas diárias', icon: BarChart3 },
   { id: 'sellers', name: 'Vendedores', icon: Users },
   { id: 'goals', name: 'Metas', icon: Target },
@@ -103,6 +105,7 @@ export default function App() {
   const unreadAlerts = data.alerts.filter(a => !a.read);
   const commonProps = { data, analytics, period, user: session.user, onData: setData, notify };
   const pages: Partial<Record<Page, ReactNode>> = {
+    commissions: <Commissions {...commonProps} />,
     imports: <Imports data={data} onData={setData} notify={notify} />,
     sales: <SalesPage {...commonProps} />, sellers: <SellersPage {...commonProps} />,
     goals: <GoalsPage {...commonProps} />, ticket: <TicketPage {...commonProps} />,

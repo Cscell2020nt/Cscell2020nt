@@ -209,3 +209,19 @@ ambiente isolado e não precisa de outro Git worktree. O preparo reutilizável �
 `npm ci`; a inicialização de desenvolvimento é `npm run dev`, seguida de
 `npm test` e `npm run build`. Publicação do site e revisão das configurações do
 ambiente são operações separadas de iniciar o processo local.
+
+
+## Produtos e comissão (0.1.2)
+
+O menu **Produtos e comissão** mostra unidades e valores líquidos por vendedor para as categorias Celulares e Acessórios. O vendedor vê seus próprios dados; o administrador vê a equipe.
+
+- Acessórios: acima de R$ 10.000 no mês, comissão de 3% sobre todo o valor mensal da categoria. Exatamente R$ 10.000 ainda não libera a comissão.
+- Celulares: 1,25%; sobe para 1,75% quando todas as vendas válidas do vendedor nos 90 dias encerrados na referência ultrapassam R$ 100.000. Exatamente R$ 100.000 permanece em 1,25%. A faixa na referência é aplicada ao valor mensal de celulares.
+- Referência: hoje em meses em andamento ou o último dia do mês selecionado em meses encerrados. São 90 dias corridos incluindo a referência. Importe todo esse histórico para conferir a faixa; o sistema só conhece os dados importados.
+- A estimativa utiliza valores líquidos; pagamentos com troca não são descontados novamente. Canceladas, devolvidas e pendentes são excluídas.
+
+Para detalhar categorias, exporte uma linha por item com **Número da venda, Data, Vendedor, Categoria, Produto, Quantidade, Total do item**. Use categorias **Celulares** e **Acessórios**. Valores de itens da mesma transação são somados uma vez no faturamento; as unidades continuam separadas. Totais da transação repetidos em vários itens não são rateados. Quantidades ausentes aparecem como indisponíveis.
+
+Relatórios contendo somente totais de vendas, incluindo Relat2.xls, continuam importando normalmente, mas não permitem descobrir as categorias. A tela sinaliza dados incompletos e não fecha a comissão nessas condições. Vendas antigas sem itens precisam de reimportação detalhada com o mesmo número da venda e autorização para atualizar. Resumos consolidados também não fornecem composição de produtos.
+
+Para atualizar uma instalação Windows, encerre o aplicativo com Ctrl+C e copie os arquivos desta versão para a pasta da instalação original, preservando **.data** e **.env**. Execute INICIAR-WINDOWS.bat novamente. Não troque o banco por uma pasta nova vazia.

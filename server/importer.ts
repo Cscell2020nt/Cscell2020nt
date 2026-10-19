@@ -362,7 +362,7 @@ function status(value: unknown): SaleStatus {
   throw new Error(`Status não reconhecido: "${string(value)}". Confirme a situação da venda no arquivo.`);
 }
 
-type RowSale = { sale: Sale; row: number; raw: string; count: number };
+type RowSale = { sale: Sale; row: number; raw: string; count: number; quantityKnown: boolean };
 const moneyFields = ['grossCents', 'discountCents', 'netCents', 'tradeInCents', 'financedCents'] as const;
 function saleFingerprint(sale: Sale): string {
   return hash([sale.date, sale.time, sale.sellerId, sale.product, sale.category, sale.quantity, sale.grossCents, sale.discountCents, sale.netCents, sale.tradeInCents, sale.financedCents, sale.paymentMethod, sale.financierId]);
@@ -440,7 +440,7 @@ export function normalizeImport(parsed: ParsedFile, options: ImportOptions = {},
     if (typeof read('externalId') === 'number' && !Number.isSafeInteger(read('externalId'))) issue(row, 'externalId', 'Identificador numérico sem precisão ou não inteiro. Exporte o número da venda como texto.');
     if (rowStatus === 'pending') warnings.push(`Linha ${row}: venda aberta preservada como pendente; não entra no faturamento nem na contagem de vendas concluídas.`);
     const sale: Sale = { id: '', externalId: string(read('externalId')), date: rowDate, time: rowTime, sellerId: seller?.id || '', product: string(read('product')), category: string(read('category')), quantity, grossCents: gross, discountCents: discount, netCents: net, tradeInCents: tradeIn, financedCents: financed, paymentMethod: string(read('paymentMethod')), financierId: financier?.id || '', status: rowStatus, fingerprint: '', batchId: '' };
-    if (issues.length === before) rows.push({ sale, row, raw: hash(record), count });
+    if (issues.length === before) rows.push({ sale, row, raw: hash(record), count, quantityKnown: !empty(read('quantity')) });
   });
   result.unresolvedSellers = [...unresolved];
   allDates.sort();
@@ -517,6 +517,12 @@ export function normalizeImport(parsed: ParsedFile, options: ImportOptions = {},
       if (!moneyFields.every((field) => Number.isSafeInteger(sale[field])) || !Number.isSafeInteger(sale.quantity)) { issue(group[0].row, 'net', 'A venda agrupada excede a precisão suportada.'); continue; }
     }
     if (!sale.externalId) warnings.push(`Linha ${group[0].row}: sem identificador da transação; conciliação por data, vendedor, valor e detalhes. Vendas idênticas exigem conferência.`);
+    const itemRows = group.length > 1 && !sale.externalId ? [group[0]] : group;
+    sale.items = itemRows.map(entry => ({
+      product: entry.sale.product, category: entry.sale.category,
+      quantity: entry.quantityKnown ? entry.sale.quantity : null,
+      netCents: itemRows.length === 1 || scope === 'item' ? entry.sale.netCents : null,
+    }));
     sale.fingerprint = saleFingerprint(sale);
     sale.id = `sale_${hash(identity)}`;
     result.sales.push(sale);

@@ -3,11 +3,13 @@ export interface User { id: string; name: string; email: string; role: Role; sel
 export interface Seller { id: string; name: string; initials: string; color: string; monthlyGoalCents: number; active: boolean }
 export interface Financier { id: string; name: string }
 export type SaleStatus = 'valid' | 'pending' | 'cancelled' | 'returned';
+export interface SaleItem { product: string; category: string; quantity: number | null; netCents: number | null }
 export interface Sale {
   id: string; externalId: string; date: string; time: string; sellerId: string;
   product: string; category: string; quantity: number; grossCents: number;
   discountCents: number; netCents: number; tradeInCents: number;
   financedCents: number; paymentMethod: string; financierId: string;
+  items?: SaleItem[];
   status: SaleStatus; fingerprint: string; batchId: string;
 }
 export interface ConsolidatedSummary {

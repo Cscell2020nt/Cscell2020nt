@@ -231,6 +231,12 @@ try {
   assert.equal((await sellerContext.request.put('/api/settings', {data: own.settings})).status(), 403);
   assert.equal((await sellerContext.request.get('/api/users')).status(), 403);
   assert.equal((await sellerContext.request.get('/api/ranking')).status(), 200);
+  await navigate(sellerPage, 'Produtos e comissão');
+  await sellerPage.getByRole('heading', {name: 'Produtos e comissão', exact: true}).waitFor();
+  assert.equal(await sellerPage.locator('article.panel').count(), 1);
+  await sellerPage.getByText('Aguardando dados completos', {exact: false}).waitFor();
+  await sellerPage.setViewportSize({width: 390, height: 844});
+  assert.ok(await sellerPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Comissões sem overflow em celular');
   await sellerContext.close();
   assert.deepEqual(browserErrors, [], `Erros de navegador: ${browserErrors.join('; ')}`);
   console.log('E2E: login de vendedor, dados próprios, ranking agregado e mutações administrativas bloqueadas.');
