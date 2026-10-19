@@ -2,7 +2,7 @@ export type Role = 'admin' | 'seller';
 export interface User { id: string; name: string; email: string; role: Role; sellerId?: string }
 export interface Seller { id: string; name: string; initials: string; color: string; monthlyGoalCents: number; active: boolean }
 export interface Financier { id: string; name: string }
-export type SaleStatus = 'valid' | 'cancelled' | 'returned';
+export type SaleStatus = 'valid' | 'pending' | 'cancelled' | 'returned';
 export interface Sale {
   id: string; externalId: string; date: string; time: string; sellerId: string;
   product: string; category: string; quantity: number; grossCents: number;

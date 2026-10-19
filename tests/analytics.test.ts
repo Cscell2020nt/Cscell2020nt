@@ -103,7 +103,8 @@ test('financeiras representam a parcela financiada, sem contar pagamentos mistos
 test('apenas transações válidas e identificadores únicos entram nos totais', () => {
   const input = data();
   input.sales.push(sale(), sale({ id: 'cancelled', status: 'cancelled' }),
-    sale({ id: 'returned', status: 'returned' }), sale({ id: 'outside', date: '2026-09-30' }));
+    sale({ id: 'returned', status: 'returned' }), sale({ id: 'pending', status: 'pending', netCents: 50_000_000 }),
+    sale({ id: 'outside', date: '2026-09-30' }));
   const actual = computeAnalytics(input, period);
   assert.equal(actual.count, 3);
   assert.equal(actual.revenueCents, 1_800_000);

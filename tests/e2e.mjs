@@ -103,6 +103,8 @@ try {
     const preview = await json(await result, 201);
     assert.deepEqual(preview.issues, []); assert.deepEqual(preview.unresolvedSellers, []);
     await page.getByRole('heading', {name: 'Confira os dados', exact: true}).waitFor();
+    assert.equal(await page.locator('.imports-mapping-panel').count(), 0, 'A importação deve reconhecer colunas sem painel manual.');
+    assert.equal(await page.getByText('Mapeamento de colunas', {exact: true}).count(), 0);
     return preview;
   }
   await navigate(page, 'Importar relatórios');
@@ -126,6 +128,49 @@ try {
   await metric(page, 'Vendas realizadas', '4');
   await metric(page, 'Ticket médio geral', 'R$ 2.500,00');
   console.log('E2E: CSV real → prévia sem gravação → 4 vendas/R$10.000; reimportação sem duplicação.');
+
+  await navigate(page, 'Importar relatórios');
+  const pendingCsv = `Data;Vendedor;ID Venda;Valor;Status\n${reportDate};Novo Vendedor de Teste;E2E-PENDING;700,00;ABERTA`;
+  await page.getByLabel('Selecionar relatório de vendas', {exact: true}).setInputFiles({name: 'pendente.csv', mimeType: 'text/csv', buffer: Buffer.from(pendingCsv)});
+  const pendingPreview = page.waitForResponse(response => response.url().endsWith('/api/imports/preview'));
+  await page.getByRole('button', {name: 'Conferir arquivo', exact: true}).click();
+  assert.deepEqual((await json(await pendingPreview, 201)).unresolvedSellers, ['Novo Vendedor de Teste']);
+  const creation = page.waitForResponse(response => response.url().endsWith('/api/sellers') && response.request().method() === 'POST');
+  await page.getByRole('button', {name: 'Cadastrar vendedor Novo Vendedor de Teste', exact: true}).click();
+  await json(await creation, 201);
+  await page.getByRole('button', {name: 'Vendedor Novo Vendedor de Teste cadastrado', exact: true}).waitFor();
+  assert.equal((await json(await context.request.get('/api/data'))).sales.length, 4, 'Cadastro na prévia não confirma vendas.');
+  const pendingRevised = page.waitForResponse(response => response.url().endsWith('/repreview'));
+  await page.getByRole('button', {name: 'Corrigir e conferir', exact: true}).click();
+  const pendingData = await json(await pendingRevised);
+  assert.deepEqual(pendingData.issues, []); assert.equal(pendingData.sales[0].status, 'pending');
+  assert.equal(pendingData.revenueCents, 0); assert.equal(pendingData.salesCount, 0);
+  const pendingConfirmed = page.waitForResponse(response => response.url().endsWith('/confirm'));
+  await page.getByRole('button', {name: 'Confirmar importação', exact: true}).click();
+  assert.equal((await json(await pendingConfirmed)).data.sales.length, 5);
+  await page.getByRole('heading', {name: 'Seus números estão em dia.', exact: true}).waitFor();
+  await page.getByRole('button', {name: 'Importar outro arquivo', exact: true}).click();
+  const summaryCsv = 'Vendedor;Faturamento;Quantidade de vendas\nThales;700,00;2';
+  await page.getByLabel('Selecionar relatório de vendas', {exact: true}).setInputFiles({name: 'resumo.csv', mimeType: 'text/csv', buffer: Buffer.from(summaryCsv)});
+  const summaryPreview = page.waitForResponse(response => response.url().endsWith('/api/imports/preview'));
+  await page.getByRole('button', {name: 'Conferir arquivo', exact: true}).click();
+  assert.equal((await json(await summaryPreview, 201)).mode, 'summary');
+  const previousFirst = new Date(Date.UTC(Number(part('year')), Number(part('month')) - 2, 1)).toISOString().slice(0, 10);
+  const previousLast = new Date(Date.UTC(Number(part('year')), Number(part('month')) - 1, 0)).toISOString().slice(0, 10);
+  await page.getByLabel('Início do período', {exact: true}).fill(previousFirst);
+  await page.getByLabel('Fim do período', {exact: true}).fill(previousLast);
+  const summaryRevised = page.waitForResponse(response => response.url().endsWith('/repreview'));
+  await page.getByRole('button', {name: 'Atualizar período', exact: true}).click();
+  const summaryData = await json(await summaryRevised);
+  assert.deepEqual(summaryData.issues, []); assert.equal(summaryData.salesCount, 2);
+  assert.equal(await page.getByText('Mapeamento de colunas', {exact: true}).count(), 0);
+  const summaryConfirmed = page.waitForResponse(response => response.url().endsWith('/confirm'));
+  await page.getByRole('button', {name: 'Confirmar importação', exact: true}).click();
+  assert.equal((await json(await summaryConfirmed)).data.summaries.length, 1);
+  await navigate(page, 'Dashboard geral');
+  await metric(page, 'Faturamento acumulado', 'R$ 10.000,00');
+  await metric(page, 'Vendas realizadas', '4');
+  console.log('E2E: sem mapeamento manual; vendedor cadastrado na prévia; venda aberta excluída; resumo com período confirmado.');
 
   await navigate(page, 'Metas');
   await page.getByRole('button', {name: 'Definir metas', exact: true}).click();

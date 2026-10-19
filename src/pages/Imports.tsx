@@ -2,9 +2,9 @@ import { useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import {
   AlertCircle, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronDown,
   ChevronUp, Download, FileSpreadsheet, FileText, History, Info,
-  LoaderCircle, RefreshCw, ShieldCheck, SlidersHorizontal, UploadCloud, X,
+  LoaderCircle, RefreshCw, ShieldCheck, SlidersHorizontal, UploadCloud, UserPlus, X,
 } from 'lucide-react';
-import type { AppData, ColumnMapping, ImportBatch, ImportField, ImportMode, ImportOptions, ImportPreview } from '../../shared/types';
+import type { AppData, ImportBatch, ImportField, ImportMode, ImportOptions, ImportPreview } from '../../shared/types';
 import { api } from '../lib/api';
 import './Imports.css';
 
@@ -71,9 +71,10 @@ export function Imports({ data, onData, notify }: ImportsProps) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [preview, setPreview] = useState<ImportPreview | null>(null);
-  const [mapping, setMapping] = useState<ColumnMapping>({});
   const [sellerAliases, setSellerAliases] = useState<Record<string, string>>({});
-  const [mappingOpen, setMappingOpen] = useState(false);
+  const [creatingSeller, setCreatingSeller] = useState<string | null>(null);
+  const [sellerCreationErrors, setSellerCreationErrors] = useState<Record<string, string>>({});
+  const [createdSellers, setCreatedSellers] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
   const [allowSummaryReplacement, setAllowSummaryReplacement] = useState(false);
   const [allowUpdates, setAllowUpdates] = useState(false);
@@ -84,7 +85,7 @@ export function Imports({ data, onData, notify }: ImportsProps) {
   const summary = mode === 'summary' || (mode === 'automatic' && preview?.mode === 'summary');
   const cumulative = mode === 'cumulative' || (mode === 'automatic' && preview?.mode === 'cumulative');
   const showPeriod = summary || cumulative;
-  const busy = loading !== null;
+  const busy = loading !== null || creatingSeller !== null;
   const step = completed ? 3 : preview ? 2 : 1;
 
   const reset = () => {
@@ -96,9 +97,9 @@ export function Imports({ data, onData, notify }: ImportsProps) {
     dragDepth.current = 0;
     setPreview(null);
     setCompleted(null);
-    setMapping({});
     setSellerAliases({});
-    setMappingOpen(false);
+    setSellerCreationErrors({});
+    setCreatedSellers({});
     setDirty(false);
     setAllowSummaryReplacement(false);
     setAllowUpdates(false);
@@ -145,7 +146,6 @@ export function Imports({ data, onData, notify }: ImportsProps) {
 
   const options = (): ImportOptions => ({
     ...(mode !== 'automatic' ? { mode } : {}),
-    ...(preview ? { mapping } : {}),
     ...(Object.keys(sellerAliases).length ? { sellerAliases } : {}),
     ...(showPeriod && startDate ? { startDate } : {}),
     ...(showPeriod && endDate ? { endDate } : {}),
@@ -153,12 +153,10 @@ export function Imports({ data, onData, notify }: ImportsProps) {
 
   const updatePreview = (result: ImportPreview) => {
     setPreview(result);
-    setMapping(result.mapping);
     setDirty(false);
     setAllowSummaryReplacement(false);
     setAllowUpdates(false);
     setShowAll(false);
-    if (result.issues.some((issue) => ['date', 'period', 'mode'].includes(issue.field) || /coluna|campo|mapeamento/i.test(issue.message)) || (result.mode === 'summary' && (!startDate || !endDate)) || (result.mode === 'cumulative' && result.hasOverlap)) setMappingOpen(true);
   };
 
   const processFile = async () => {
@@ -221,8 +219,39 @@ export function Imports({ data, onData, notify }: ImportsProps) {
     setMode(value);
     if (preview) setDirty(true);
   };
+  const canCreateSeller = (name: string) => !!name.trim() && name.trim() !== '(vendedor vazio)';
+  const createSeller = async (rawName: string) => {
+    if (busy || !canCreateSeller(rawName)) return;
+    const name = rawName.trim();
+    const words = name.split(/\s+/);
+    const initials = (words.length > 1 ? `${words[0][0]}${words.at(-1)![0]}` : name.slice(0, 2)).toLocaleUpperCase('pt-BR');
+    const existingIds = new Set(data.sellers.map((seller) => seller.id));
+    setCreatingSeller(rawName);
+    setSellerCreationErrors((current) => ({ ...current, [rawName]: '' }));
+    try {
+      const result = await api<{ data: AppData }>('/api/sellers', {
+        method: 'POST',
+        body: JSON.stringify({ name, initials, color: '#37dfad', monthlyGoalCents: 0, active: true }),
+      });
+      onData(result.data);
+      const created = result.data.sellers.find((seller) => !existingIds.has(seller.id) && seller.name.trim() === name);
+      if (!created) {
+        setSellerCreationErrors((current) => ({ ...current, [rawName]: 'O cadastro foi salvo. Selecione o vendedor na lista para confirmar o vínculo.' }));
+        return;
+      }
+      setSellerAliases((current) => ({ ...current, [rawName]: created.id }));
+      setCreatedSellers((current) => ({ ...current, [rawName]: created.id }));
+      setDirty(true);
+      notify(`${created.name} cadastrado. Clique em Corrigir e conferir para revisar o vínculo.`, 'success');
+    } catch (reason) {
+      setSellerCreationErrors((current) => ({ ...current, [rawName]: reason instanceof Error ? reason.message : 'Não foi possível cadastrar este vendedor. Tente novamente.' }));
+    } finally {
+      setCreatingSeller(null);
+    }
+  };
   const sellerName = (id: string) => data.sellers.find((seller) => seller.id === id)?.name || 'Vendedor não identificado';
   const records = preview?.sales || [];
+  const pendingCount = records.filter((sale) => sale.status === 'pending').length;
   const visibleRecords = showAll ? records : records.slice(0, 20);
   const visibleSummaries = showAll ? preview?.summaries || [] : (preview?.summaries || []).slice(0, 20);
   const periodFields = (previewing = false) => (
@@ -300,28 +329,67 @@ export function Imports({ data, onData, notify }: ImportsProps) {
                 <button className="btn btn-ghost" disabled={busy} onClick={reset}><X size={16} /> Trocar arquivo</button>
               </section>
               <div className="imports-preview-stats">
-                <div className="stat-card"><span>Faturamento lido</span><strong>{money(preview.revenueCents)}</strong><small>Conforme os registros do arquivo</small></div>
+                <div className="stat-card"><span>Faturamento lido</span><strong>{money(preview.revenueCents)}</strong><small>Apenas vendas válidas e resumos consolidados</small></div>
                 <div className="stat-card"><span>Vendas no arquivo</span><strong>{number(preview.salesCount)}</strong><small>{preview.sellerNames.join(', ') || 'Nenhum vendedor identificado'}</small></div>
                 <div className="stat-card"><span>Novos registros</span><strong className="imports-text-primary">{number(preview.newCount)}</strong><small>Prontos para adicionar</small></div>
                 <div className="stat-card"><span>Duplicados</span><strong>{number(preview.duplicateCount)}</strong><small>Serão ignorados automaticamente</small></div>
               </div>
 
+              {pendingCount > 0 && <div className="imports-notice imports-notice-warning"><Info size={19} /><div><strong>{number(pendingCount)} {pendingCount === 1 ? 'venda em aberto' : 'vendas em aberto'} neste arquivo</strong><p>Os registros com status em aberto serão preservados, sem somar ao faturamento ou à quantidade de vendas concluídas.</p></div></div>}
+
               {preview.warnings.length > 0 && <div className="imports-notice imports-notice-info"><Info size={19} /><div><strong>Observações sobre este relatório</strong><ul>{preview.warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}</ul></div></div>}
 
-              <section className="panel imports-mapping-panel">
-                <button className="imports-disclosure" onClick={() => setMappingOpen(!mappingOpen)} aria-expanded={mappingOpen}><span><SlidersHorizontal size={19} /><span><strong>Mapeamento de colunas</strong><small>{Object.values(preview.mapping).filter(Boolean).length} campos reconhecidos · ajuste se necessário</small></span></span>{mappingOpen ? <ChevronUp size={19} /> : <ChevronDown size={19} />}</button>
-                {mappingOpen && <div className="imports-mapping-content"><p className="muted">Escolha a coluna correspondente a cada campo. Campos ausentes podem ficar sem coluna; eventuais pendências aparecem abaixo.</p><div className="imports-mapping-grid">{FIELDS.map((field) => <label className="field" key={field.value}>{field.label}<select disabled={busy} value={mapping[field.value] || ''} onChange={(event) => { setMapping({ ...mapping, [field.value]: event.target.value }); setDirty(true); }}><option value="">Sem coluna</option>{preview.columns.map((column) => <option key={column} value={column}>{column}</option>)}</select></label>)}</div><div className="imports-preview-options"><label className="field">Modelo do relatório<select value={mode} disabled={busy} onChange={(event) => changeMode(event.target.value as ModeChoice)}>{MODES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{showPeriod && periodFields(true)}</div><div className="imports-mapping-actions"><span className="muted">{dirty ? 'Atualize a prévia para validar suas alterações.' : 'O mapeamento está aplicado à prévia.'}</span><button className="btn btn-ghost" disabled={!dirty || busy} onClick={processFile}><RefreshCw size={15} className={loading === 'repreview' ? 'imports-spin' : ''} />{loading === 'repreview' ? 'Atualizando…' : 'Aplicar mapeamento'}</button></div></div>}
-              </section>
+              {(summary || preview.hasOverlap || preview.issues.some((issue) => ['period', 'mode'].includes(issue.field))) && (
+                <section className="panel imports-period-panel">
+                  <div className="section-header"><div><h3>Período do relatório</h3><p className="muted">Informe o período somente quando ele não puder ser identificado no arquivo.</p></div></div>
+                  <label className="field">Tipo de relatório<select value={mode} disabled={busy} onChange={(event) => changeMode(event.target.value as ModeChoice)}>{MODES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+                  {showPeriod && periodFields(true)}
+                  <div className="imports-mapping-actions"><span className="muted">{dirty ? 'Confira o período atualizado antes de importar.' : 'As colunas são reconhecidas automaticamente.'}</span><button className="btn btn-ghost" disabled={!dirty || busy} onClick={processFile}><RefreshCw size={15} className={loading === 'repreview' ? 'imports-spin' : ''} />Atualizar período</button></div>
+                </section>
+              )}
 
-              {preview.unresolvedSellers.length > 0 && <section className="panel imports-seller-mapping"><div className="section-header"><div><h3><AlertCircle size={18} /> Identifique os vendedores</h3><p className="muted">Vincule cada nome do arquivo a um vendedor cadastrado para continuar.</p></div><span className="badge badge-warning">{preview.unresolvedSellers.length} pendente{preview.unresolvedSellers.length > 1 ? 's' : ''}</span></div><div className="imports-alias-grid">{preview.unresolvedSellers.map((name) => <label className="field" key={name}><span>“{name}” no arquivo</span><select disabled={busy} value={sellerAliases[name] || ''} onChange={(event) => { setSellerAliases({ ...sellerAliases, [name]: event.target.value }); setDirty(true); }}><option value="">Selecione o vendedor correto</option>{data.sellers.map((seller) => <option key={seller.id} value={seller.id}>{seller.name}{seller.active ? '' : ' (inativo)'}</option>)}</select></label>)}</div>{!data.sellers.length && <p className="imports-inline-warning">Cadastre os vendedores na aba Vendedores antes de concluir esta importação.</p>}<div className="imports-mapping-actions"><span className="muted">O vínculo só é aplicado após a sua escolha.</span><button className="btn btn-primary" disabled={busy || !preview.unresolvedSellers.every((name) => !!sellerAliases[name])} onClick={processFile}>{loading === 'repreview' ? <LoaderCircle size={15} className="imports-spin" /> : <Check size={15} />} Corrigir e conferir</button></div></section>}
+              {preview.unresolvedSellers.length > 0 && (
+                <section className="panel imports-seller-mapping">
+                  <div className="section-header">
+                    <div><h3><AlertCircle size={18} /> Identifique os vendedores</h3><p className="muted">Vincule cada nome a um vendedor existente. Se for uma nova pessoa, você também pode cadastrá-la aqui.</p></div>
+                    <span className="badge badge-warning">{preview.unresolvedSellers.length} pendente{preview.unresolvedSellers.length > 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="imports-alias-grid">
+                    {preview.unresolvedSellers.map((name, index) => (
+                      <div className="imports-alias-item" key={name}>
+                        <label className="field" htmlFor={`import-seller-${index}`}><span>“{name}” no arquivo</span>
+                          <select id={`import-seller-${index}`} disabled={busy} value={sellerAliases[name] || ''} onChange={(event) => { setSellerAliases({ ...sellerAliases, [name]: event.target.value }); setSellerCreationErrors((current) => ({ ...current, [name]: '' })); setDirty(true); }}>
+                            <option value="">Selecione o vendedor correto</option>
+                            {data.sellers.map((seller) => <option key={seller.id} value={seller.id}>{seller.name}{seller.active ? '' : ' (inativo)'}</option>)}
+                          </select>
+                        </label>
+                        {canCreateSeller(name) && (
+                          <div className="imports-alias-action">
+                            <span className="muted">{createdSellers[name] ? 'Cadastro criado. Confira o vínculo selecionado.' : 'Novo vendedor? Cadastre apenas se ainda não existir.'}</span>
+                            <button className="btn btn-ghost" disabled={busy || !!createdSellers[name]} onClick={() => createSeller(name)} aria-label={creatingSeller === name ? `Cadastrando vendedor ${name}` : createdSellers[name] ? `Vendedor ${name} cadastrado` : `Cadastrar vendedor ${name}`}>
+                              {creatingSeller === name ? <LoaderCircle size={14} className="imports-spin" /> : createdSellers[name] ? <CheckCircle2 size={14} /> : <UserPlus size={14} />}
+                              {creatingSeller === name ? 'Cadastrando…' : createdSellers[name] ? 'Cadastrado' : 'Cadastrar vendedor'}
+                            </button>
+                          </div>
+                        )}
+                        {sellerCreationErrors[name] && <p className="imports-seller-error" role="alert">{sellerCreationErrors[name]}</p>}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="imports-mapping-actions">
+                    <span className="muted">Cadastrar um vendedor preserva a prévia e não importa vendas. Confirme os vínculos em seguida.</span>
+                    <button className="btn btn-primary" disabled={busy || !preview.unresolvedSellers.every((name) => !!sellerAliases[name])} onClick={processFile}>{loading === 'repreview' ? <LoaderCircle size={15} className="imports-spin" /> : <Check size={15} />} Corrigir e conferir</button>
+                  </div>
+                </section>
+              )}
 
-              {preview.issues.length > 0 && <section className="panel imports-issues"><div className="section-header"><div><h3><AlertCircle size={18} /> Existem {preview.issues.length} {preview.issues.length === 1 ? 'pendência' : 'pendências'} no arquivo</h3><p className="muted">Corrija o mapeamento ou os dados de origem antes de confirmar.</p></div><button className="btn btn-ghost" onClick={() => setMappingOpen(true)}><SlidersHorizontal size={15} /> Revisar colunas</button></div><div className="table-wrap"><table className="data-table"><thead><tr><th>Linha</th><th>Campo</th><th>O que precisa de atenção</th></tr></thead><tbody>{preview.issues.map((issue, index) => <tr key={`${issue.row}-${index}`}><td>{issue.row > 0 ? issue.row : 'Arquivo'}</td><td>{FIELDS.find((field) => field.value === issue.field)?.label || issue.field || '—'}</td><td>{issue.message}</td></tr>)}</tbody></table></div></section>}
+              {preview.issues.length > 0 && <section className="panel imports-issues"><div className="section-header"><div><h3><AlertCircle size={18} /> Existem {preview.issues.length} {preview.issues.length === 1 ? 'pendência' : 'pendências'} no arquivo</h3><p className="muted">Corrija os campos indicados no arquivo de origem e envie novamente. Vendedores podem ser vinculados acima.</p></div></div><div className="table-wrap"><table className="data-table"><thead><tr><th>Linha</th><th>Campo</th><th>O que precisa de atenção</th></tr></thead><tbody>{preview.issues.map((issue, index) => <tr key={`${issue.row}-${index}`}><td>{issue.row > 0 ? issue.row : 'Arquivo'}</td><td>{FIELDS.find((field) => field.value === issue.field)?.label || issue.field || '—'}</td><td>{issue.message}</td></tr>)}</tbody></table></div></section>}
 
-              <section className="panel imports-records"><div className="section-header"><div><h2>Confira os dados</h2><p className="muted">Revise os valores e os vendedores antes de concluir.</p></div><span className="badge">{number(records.length + (preview.summaries.length || 0))} registros</span></div>{records.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Data</th><th>Vendedor</th><th>Produto / ID</th><th>Qtd.</th><th>Pagamento</th><th className="imports-align-right">Valor líquido</th><th>Status</th></tr></thead><tbody>{visibleRecords.map((sale, index) => <tr key={`${sale.id}-${index}`}><td className="imports-nowrap">{date(sale.date)}{sale.time && <small className="imports-cell-subtext">{sale.time}</small>}</td><td>{sellerName(sale.sellerId)}</td><td>{sale.product || 'Sem produto'}<small className="imports-cell-subtext">{sale.externalId || 'Sem ID externo'}</small></td><td>{sale.quantity}</td><td>{sale.paymentMethod || 'Não informado'}</td><td className="imports-align-right imports-cell-value">{money(sale.netCents)}</td><td><span className={`badge ${sale.status === 'valid' ? 'badge-success' : 'badge-warning'}`}>{sale.status === 'valid' ? 'Válida' : sale.status === 'returned' ? 'Devolvida' : 'Cancelada'}</span></td></tr>)}</tbody></table></div> : preview.summaries.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Vendedor</th><th>Período</th><th className="imports-align-right">Vendas</th><th className="imports-align-right">Faturamento</th></tr></thead><tbody>{visibleSummaries.map((item, index) => <tr key={`${item.id}-${index}`}><td>{sellerName(item.sellerId)}</td><td>{date(item.startDate)} a {date(item.endDate)}</td><td className="imports-align-right">{number(item.salesCount)}</td><td className="imports-align-right imports-cell-value">{money(item.revenueCents)}</td></tr>)}</tbody></table></div> : <div className="empty-state"><FileSpreadsheet size={28} /><h3>Nenhum registro válido para conferir</h3><p>Confira as pendências do arquivo e o mapeamento das colunas.</p></div>}{records.length + preview.summaries.length > 20 && <div className="imports-table-footer"><span className="muted">{showAll ? 'Todos os registros exibidos' : 'Exibindo os primeiros 20 registros'}</span><button className="btn btn-ghost" onClick={() => setShowAll(!showAll)}>{showAll ? 'Mostrar menos' : 'Ver todos os registros'}{showAll ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</button></div>}</section>
+              <section className="panel imports-records"><div className="section-header"><div><h2>Confira os dados</h2><p className="muted">Revise os valores e os vendedores antes de concluir.</p></div><span className="badge">{number(records.length + (preview.summaries.length || 0))} registros</span></div>{records.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Data</th><th>Vendedor</th><th>Produto / ID</th><th>Qtd.</th><th>Pagamento</th><th className="imports-align-right">Valor líquido</th><th>Status</th></tr></thead><tbody>{visibleRecords.map((sale, index) => <tr key={`${sale.id}-${index}`}><td className="imports-nowrap">{date(sale.date)}{sale.time && <small className="imports-cell-subtext">{sale.time}</small>}</td><td>{sellerName(sale.sellerId)}</td><td>{sale.product || 'Sem produto'}<small className="imports-cell-subtext">{sale.externalId || 'Sem ID externo'}</small></td><td>{sale.quantity}</td><td>{sale.paymentMethod || 'Não informado'}</td><td className="imports-align-right imports-cell-value">{money(sale.netCents)}</td><td><span className={`badge ${sale.status === 'valid' ? 'badge-success' : 'badge-warning'}`}>{sale.status === 'valid' ? 'Válida' : sale.status === 'pending' ? 'Em aberto' : sale.status === 'returned' ? 'Devolvida' : 'Cancelada'}</span></td></tr>)}</tbody></table></div> : preview.summaries.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Vendedor</th><th>Período</th><th className="imports-align-right">Vendas</th><th className="imports-align-right">Faturamento</th></tr></thead><tbody>{visibleSummaries.map((item, index) => <tr key={`${item.id}-${index}`}><td>{sellerName(item.sellerId)}</td><td>{date(item.startDate)} a {date(item.endDate)}</td><td className="imports-align-right">{number(item.salesCount)}</td><td className="imports-align-right imports-cell-value">{money(item.revenueCents)}</td></tr>)}</tbody></table></div> : <div className="empty-state"><FileSpreadsheet size={28} /><h3>Nenhum registro válido para conferir</h3><p>Confira as pendências do arquivo. As colunas são identificadas automaticamente.</p></div>}{records.length + preview.summaries.length > 20 && <div className="imports-table-footer"><span className="muted">{showAll ? 'Todos os registros exibidos' : 'Exibindo os primeiros 20 registros'}</span><button className="btn btn-ghost" onClick={() => setShowAll(!showAll)}>{showAll ? 'Mostrar menos' : 'Ver todos os registros'}{showAll ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</button></div>}</section>
 
               {(preview.hasOverlap || preview.updateCount > 0) && <section className="imports-notice imports-notice-warning"><AlertCircle size={20} /><div><strong>Revise as alterações em dados existentes</strong>{preview.updateCount > 0 && <label className="imports-checkbox"><input type="checkbox" checked={allowUpdates} disabled={busy || dirty} onChange={(event) => setAllowUpdates(event.target.checked)} /><span>Autorizo atualizar {number(preview.updateCount)} {preview.updateCount === 1 ? 'registro existente' : 'registros existentes'} com os valores deste arquivo.</span></label>}{preview.hasOverlap && <label className="imports-checkbox"><input type="checkbox" checked={allowSummaryReplacement} disabled={busy || dirty} onChange={(event) => setAllowSummaryReplacement(event.target.checked)} /><span>Autorizo substituir os resumos e/ou vendas já existentes cobertos pelo período e pelos vendedores deste arquivo. Essa substituição evita contagem em duplicidade.</span></label>}</div></section>}
 
-              <div className="panel imports-confirm-bar"><div><ShieldCheck size={22} /><span><strong>{dirty ? 'Há alterações que precisam de uma nova prévia' : preview.issues.length || preview.unresolvedSellers.length ? 'Resolva as pendências para continuar' : 'Você está no controle dos seus dados'}</strong><small>{dirty ? 'Aplique o mapeamento ou as correções antes de confirmar.' : 'Novos dados só aparecem nos indicadores após a confirmação.'}</small></span></div><div className="imports-confirm-buttons"><button className="btn btn-ghost" disabled={busy} onClick={reset}>Cancelar</button>{dirty ? <button className="btn btn-primary" disabled={busy} onClick={processFile}><RefreshCw size={17} className={loading === 'repreview' ? 'imports-spin' : ''} /> Atualizar prévia</button> : <button className="btn btn-primary" disabled={!canConfirm} onClick={confirmImport}>{loading === 'confirm' ? <LoaderCircle size={17} className="imports-spin" /> : <Check size={17} />}{loading === 'confirm' ? 'Importando…' : 'Confirmar importação'}</button>}</div></div>
+              <div className="panel imports-confirm-bar"><div><ShieldCheck size={22} /><span><strong>{dirty ? 'Há alterações que precisam de uma nova prévia' : preview.issues.length || preview.unresolvedSellers.length ? 'Resolva as pendências para continuar' : 'Você está no controle dos seus dados'}</strong><small>{dirty ? 'Confirme os vínculos de vendedores ou atualize o período antes de importar.' : 'Novos dados só aparecem nos indicadores após a confirmação.'}</small></span></div><div className="imports-confirm-buttons"><button className="btn btn-ghost" disabled={busy} onClick={reset}>Cancelar</button>{dirty ? <button className="btn btn-primary" disabled={busy} onClick={processFile}><RefreshCw size={17} className={loading === 'repreview' ? 'imports-spin' : ''} /> Atualizar prévia</button> : <button className="btn btn-primary" disabled={!canConfirm} onClick={confirmImport}>{loading === 'confirm' ? <LoaderCircle size={17} className="imports-spin" /> : <Check size={17} />}{loading === 'confirm' ? 'Importando…' : 'Confirmar importação'}</button>}</div></div>
             </div>
           )}
         </>

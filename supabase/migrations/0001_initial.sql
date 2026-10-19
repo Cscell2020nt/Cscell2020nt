@@ -121,7 +121,7 @@ create table public.sales (
   fingerprint text not null check (length(fingerprint) > 0),
   sale_date date not null,
   sale_time time,
-  status text not null default 'valid' check (status in ('valid', 'cancelled', 'returned')),
+  status text not null default 'valid' check (status in ('valid', 'pending', 'cancelled', 'returned')),
   currency text not null default 'BRL' check (currency = 'BRL'),
   gross_cents bigint not null check (gross_cents >= 0),
   discount_cents bigint not null default 0 check (discount_cents >= 0),

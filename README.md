@@ -26,6 +26,9 @@ Abra `http://localhost:5173`. O Vite encaminha `/api` para o Express em
 5173. Preserve a porta 3001 no desenvolvimento porque o proxy do Vite usa esse
 destino. A API responde em `http://127.0.0.1:3001/api/health`.
 
+No Windows, também é possível executar `INICIAR-WINDOWS.bat` na pasta extraída.
+Mantenha o terminal aberto enquanto usa o sistema.
+
 Na primeira abertura, cadastre o administrador com nome, e-mail e senha de pelo
 menos 10 caracteres. Esse cadastro inicial se fecha após a criação da conta.
 O administrador configura metas, calendário e acessos dos vendedores pela
@@ -96,8 +99,8 @@ real exportado pelo SH Sistemas.
 
 1. Abra **Importações** com a conta de administrador e envie CSV, XLSX, XLS ou
    PDF com texto extraível, de até 10 MB e 50.000 linhas.
-2. Confira o mapeamento de colunas, período, modalidade diária/acumulada/resumo,
-   vendedores reconhecidos, quantidades, valores e erros da prévia.
+2. As colunas são reconhecidas automaticamente. Confira período, modalidade
+   diária/acumulada/resumo, vendedores, quantidades, valores e erros da prévia.
 3. Resolva vendedores desconhecidos e revise duplicados. Alterações em vendas
    já existentes e substituições de resumos exigem confirmação explícita.
 4. Confirme para gravar vendas, lote e auditoria na mesma transação. A prévia
@@ -107,8 +110,39 @@ Use o identificador original da venda sempre que disponível. Reimportar a mesma
 venda não deve somá-la novamente; sem identificador, o sistema compara o conteúdo
 e duas vendas idênticas podem ser indistinguíveis. Planilhas com vários itens por
 venda precisam distinguir **total da venda** de **total do item**, para evitar
-somar um total repetido. Cancelamentos e devoluções não entram no faturamento
+somar um total repetido. Vendas em aberto, cancelamentos e devoluções não entram no faturamento
 válido.
+
+### Excel legado exportado pelo sistema comercial
+
+O importador aceita XLS binário antigo (BIFF2, BIFF3 e BIFF4), além de XLS em
+contêiner OLE e XLSX. A estrutura do arquivo é validada antes da leitura; somente
+trocar a extensão de outro tipo de arquivo não o torna uma planilha válida.
+Caracteres de relatórios brasileiros antigos são decodificados com as tabelas
+de codificação da biblioteca de planilhas.
+
+Os cabeçalhos `Número`, `Dia`, `Vendedor`, `Situação`, `Desconto` e `Valor` são
+reconhecidos. `Fechada` significa venda válida; `ABERTA` é preservada como
+**Em aberto**, sem aumentar faturamento nem quantidade de vendas concluídas.
+`Valor` é usado como valor líquido e `Desconto` não é deduzido novamente.
+Nenhum desconto é convertido automaticamente em entrada com aparelho usado.
+
+Datas `DD/MM/AA` usam a regra de século do Excel: `00` a `29` correspondem a
+2000–2029; `30` a `99`, a 1930–1999. A prévia mostra um aviso para conferir o ano.
+Prefira exportações com quatro dígitos no ano quando disponíveis.
+
+Nomes completos diferentes dos cadastros iniciais exigem um vínculo confirmado.
+Na prévia, escolha o vendedor correto ou clique em **Cadastrar vendedor** para
+criar um cadastro próprio. Depois clique em **Corrigir e conferir** e confirme a
+importação somente após revisar os totais.
+
+### Atualizar a instalação local
+
+Feche o aplicativo com `Ctrl+C` no terminal. Preserve a pasta `.data` e seu arquivo
+`.env`, se existir. Extraia a versão nova e copie os arquivos do aplicativo para
+a mesma pasta da instalação, substituindo os arquivos de código. Os downloads
+do projeto não contêm `.data` nem credenciais locais. Execute novamente
+`INICIAR-WINDOWS.bat`; ele instala as dependências pelo lockfile e mantém o banco.
 
 Quando o relatório traz líquido explícito, esse valor prevalece no faturamento;
 uma divergência em relação a bruto menos desconto aparece como aviso para

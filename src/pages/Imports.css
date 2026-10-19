@@ -2,6 +2,9 @@
 :root[data-theme=light] .imports-page { --imports-info: #3667a3; --imports-warning: #8c5e0e; --imports-danger: #ba334d; --imports-on-accent: #fff; }
 .imports-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .imports-heading .btn { flex-shrink: 0; }
+.imports-period-panel { padding: 22px; }
+.imports-period-panel .section-header { padding: 0 0 18px; }
+.imports-period-panel > .field { max-width: 320px; margin-bottom: 18px; }
 .imports-heading h1 { margin: 7px 0 8px; }
 .imports-heading p { margin-bottom: 0; }
 .imports-stepper { display: grid; grid-template-columns: repeat(3, 1fr); max-width: 810px; width: 100%; margin: 1px auto 4px; }
@@ -119,6 +122,12 @@
 .imports-seller-mapping .section-header { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
 .imports-seller-mapping h3,.imports-issues h3 { display: flex; align-items: center; gap: 8px; color: var(--imports-warning); }
 .imports-alias-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 21px; }
+.imports-alias-item { padding: 15px; border: 1px solid var(--border); border-radius: 9px; min-width: 0; background: var(--input); }
+.imports-alias-item .field > span { overflow-wrap: anywhere; }
+.imports-alias-action { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.imports-alias-action > span { font-size: 9px; line-height: 1.7; }
+.imports-alias-action .btn { font-size: 9px; padding: 7px 8px; min-height: 32px; flex-shrink: 0; background: var(--panel); }
+.imports-seller-error { color: var(--imports-danger); font-size: 10px; line-height: 1.7; margin: 10px 0 0; }
 .imports-inline-warning { color: var(--imports-warning); font-size: 11px; }
 .imports-issues { padding-top: 23px; overflow: hidden; border-color: color-mix(in srgb, var(--imports-danger) 45%, var(--border)); }
 .imports-issues > .section-header { padding: 0 23px 21px; display: flex; align-items: center; justify-content: space-between; gap: 15px; }
@@ -209,6 +218,8 @@
   .imports-mapping-actions,.imports-issues > .section-header { flex-direction: column; align-items: flex-start; }
   .imports-mapping-actions > .btn { width: 100%; justify-content: center; }
   .imports-seller-mapping { padding: 17px; }
+  .imports-alias-action { flex-wrap: wrap; gap: 8px; }
+  .imports-alias-action .btn { width: 100%; }
   .imports-seller-mapping .section-header { align-items: flex-start; }
   .imports-confirm-bar { padding: 18px; gap: 19px; }
   .imports-confirm-buttons { width: 100%; }

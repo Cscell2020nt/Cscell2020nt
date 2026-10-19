@@ -3,7 +3,10 @@ import { extname } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { parse } from 'csv-parse/sync';
 import * as XLSX from '@e965/xlsx';
+import * as codepages from '@e965/xlsx/dist/cpexcel.full.mjs';
 import type { ColumnMapping, Financier, ImportField, ImportIssue, ImportOptions, NormalizedImport, ParsedFile, Sale, SaleStatus, Seller } from '../shared/types.ts';
+
+XLSX.set_cptable(codepages);
 
 export const IMPORT_LIMITS = { bytes: 10 * 1024 * 1024, rows: 50_000, columns: 300, pages: 100, expandedBytes: 100 * 1024 * 1024 };
 export class ImportError extends Error {
@@ -15,10 +18,10 @@ const hash = (value: unknown): string => createHash('sha256').update(JSON.string
 const empty = (value: unknown): boolean => value === null || value === undefined || string(value) === '';
 
 const aliases: Record<ImportField, string[]> = {
-  date: ['data', 'data venda', 'data da venda', 'dt venda', 'data emissao', 'emissao', 'date'],
+  date: ['data', 'data venda', 'data da venda', 'dt venda', 'data emissao', 'emissao', 'date', 'dia'],
   time: ['hora', 'horario', 'hora venda', 'hora da venda'],
   seller: ['vendedor', 'vendedora', 'nome vendedor', 'nome do vendedor', 'consultor', 'consultora', 'responsavel', 'funcionario', 'colaborador'],
-  externalId: ['numero venda', 'numero da venda', 'n venda', 'venda', 'id venda', 'codigo venda', 'codigo da venda', 'numero pedido', 'pedido', 'codigo operacao', 'codigo da operacao', 'operacao', 'transacao', 'id transacao', 'cupom', 'nota fiscal'],
+  externalId: ['numero venda', 'numero da venda', 'n venda', 'venda', 'id venda', 'codigo venda', 'codigo da venda', 'numero pedido', 'pedido', 'codigo operacao', 'codigo da operacao', 'operacao', 'transacao', 'id transacao', 'cupom', 'nota fiscal', 'numero'],
   product: ['produto', 'produto vendido', 'descricao', 'descricao produto', 'item', 'nome produto'],
   quantity: ['quantidade', 'qtd', 'qtde', 'qtd itens', 'quantidade itens'],
   category: ['categoria', 'grupo', 'grupo produto'],
@@ -100,6 +103,37 @@ function checkZip(buffer: Buffer): void {
     if (actual !== expanded) throw new Error('O tamanho expandido do XLSX não corresponde ao diretório ZIP.');
     cursor += 46 + buffer.readUInt16LE(cursor + 28) + buffer.readUInt16LE(cursor + 30) + buffer.readUInt16LE(cursor + 32);
   }
+}
+
+function checkRawBiff(buffer: Buffer): void {
+  // BIFF2–4 are record streams, predating the OLE container used by Excel 97.
+  // A BOF prefix alone is insufficient: require a worksheet BOF, complete record
+  // boundaries, known BIFF2 cell records, and a final zero-length EOF record.
+  if (buffer.length < 12) throw new Error('Cabeçalho XLS BIFF inválido.');
+  const bof = buffer.readUInt16LE(0), version = new Map([[0x0009, 2], [0x0209, 3], [0x0409, 4]]).get(bof);
+  const bofLength = version === 2 ? 4 : 6;
+  if (!version || buffer.readUInt16LE(2) !== bofLength || buffer.readUInt16LE(4) !== version || ![0x000a, 0x0010].includes(buffer.readUInt16LE(6))) throw new Error('Cabeçalho XLS BIFF inválido.');
+  let offset = 4 + bofLength, cells = 0, end = false;
+  const cellMinimums = new Map([[0x0001, 7], [0x0002, 9], [0x0003, 15], [0x0004, 8], [0x0005, 9], [0x0006, 17], [0x0201, 6], [0x0203, 14], [0x0204, 8], [0x0205, 8], [0x0206, 16], [0x0406, 16], [0x027e, 10]]);
+  while (offset < buffer.length) {
+    if (offset + 4 > buffer.length) throw new Error('Registro XLS BIFF truncado.');
+    const type = buffer.readUInt16LE(offset), length = buffer.readUInt16LE(offset + 2);
+    if (offset + 4 + length > buffer.length) throw new Error('Registro XLS BIFF excede o tamanho do arquivo.');
+    if (type === 0x0009 || type === 0x0209 || type === 0x0409 || type === 0x0809) throw new Error('O XLS BIFF contém um início de planilha inesperado.');
+    if (type === 0x000a) {
+      if (length !== 0 || offset + 4 !== buffer.length) throw new Error('Marcador de fim XLS BIFF inválido ou conteúdo após o fim.');
+      end = true; break;
+    }
+    const cellMinimum = cellMinimums.get(type);
+    if (cellMinimum !== undefined) {
+      if (length < cellMinimum || (type === 0x0004 && length < 8 + buffer[offset + 11]) || (type === 0x0204 && length < 8 + buffer.readUInt16LE(offset + 10))) throw new Error('Registro de célula XLS BIFF inválido.');
+      const row = buffer.readUInt16LE(offset + 4), column = buffer.readUInt16LE(offset + 6);
+      if (row > IMPORT_LIMITS.rows + 30 || column >= IMPORT_LIMITS.columns) throw new Error('O XLS BIFF excede o limite de linhas ou colunas.');
+      cells++;
+    }
+    offset += 4 + length;
+  }
+  if (!end || !cells) throw new Error('O XLS BIFF está incompleto, sem células ou sem marcador de fim.');
 }
 
 function parseCsv(buffer: Buffer): ParsedFile {
@@ -210,15 +244,17 @@ async function parseFileContents(buffer: Buffer, filename: string): Promise<Pars
   const isPdf = buffer.subarray(0, 5).toString('ascii') === '%PDF-';
   const isZip = buffer.length >= 4 && buffer.readUInt32LE(0) === 0x04034b50;
   const isOle = buffer.subarray(0, 8).equals(Buffer.from('d0cf11e0a1b11ae1', 'hex'));
+  const isRawBiff = buffer.length >= 2 && [0x0009, 0x0209, 0x0409].includes(buffer.readUInt16LE(0));
   if (extension === '.pdf') {
     if (!isPdf) throw new Error('O conteúdo do arquivo não corresponde ao formato PDF.');
     return parsePdf(buffer);
   }
   if (extension === '.csv') {
-    if (isPdf || isZip || isOle) throw new Error('O conteúdo do arquivo não corresponde ao formato CSV.');
+    if (isPdf || isZip || isOle || isRawBiff) throw new Error('O conteúdo do arquivo não corresponde ao formato CSV.');
     return parseCsv(buffer);
   }
-  if ((extension === '.xlsx' && !isZip) || (extension === '.xls' && !isOle)) throw new Error('O conteúdo do arquivo não corresponde ao formato Excel informado.');
+  if ((extension === '.xlsx' && !isZip) || (extension === '.xls' && !isOle && !isRawBiff)) throw new Error('O conteúdo do arquivo não corresponde ao formato Excel informado.');
+  if (isRawBiff) checkRawBiff(buffer);
   if (isZip) checkZip(buffer);
   const workbook = XLSX.read(buffer, { type: 'buffer', raw: true, cellDates: false, cellNF: true, sheetRows: IMPORT_LIMITS.rows + 32, WTF: false });
   const populated = workbook.SheetNames.filter((name) => workbook.Sheets[name]['!ref']);
@@ -292,11 +328,12 @@ function date(value: unknown): string {
     return result.toISOString().slice(0, 10);
   }
   const text = string(value);
-  const br = /^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(text);
+  const br = /^(\d{2})\/(\d{2})\/(\d{4}|\d{2})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(text);
   const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$/.exec(text);
   const match = br || iso;
   if (!match || (match[4] && (+match[4] > 23 || +match[5] > 59 || +(match[6] || 0) > 59))) throw new Error('Data inválida. Use DD/MM/AAAA ou AAAA-MM-DD.');
-  return br ? validDate(+br[3], +br[2], +br[1]) : validDate(+iso![1], +iso![2], +iso![3]);
+  const year = br ? br[3].length === 2 ? (+br[3] <= 29 ? 2000 : 1900) + +br[3] : +br[3] : 0;
+  return br ? validDate(year, +br[2], +br[1]) : validDate(+iso![1], +iso![2], +iso![3]);
 }
 
 function time(value: unknown): string {
@@ -318,7 +355,8 @@ function integer(value: unknown, minimum: number): number {
 function status(value: unknown): SaleStatus {
   if (empty(value)) return 'valid';
   const normalized = key(value);
-  if (['valida', 'valido', 'valid', 'ativa', 'ativo', 'normal', 'concluida', 'concluido', 'finalizada', 'finalizado', 'aprovada', 'aprovado', 'efetuada', 'realizada', 'paga', 'pago', 'ok', 'confirmada', 'confirmado', 'vendido'].includes(normalized)) return 'valid';
+  if (['valida', 'valido', 'valid', 'ativa', 'ativo', 'normal', 'concluida', 'concluido', 'finalizada', 'finalizado', 'aprovada', 'aprovado', 'efetuada', 'realizada', 'paga', 'pago', 'ok', 'confirmada', 'confirmado', 'vendido', 'fechada', 'fechado'].includes(normalized)) return 'valid';
+  if (['aberta', 'aberto'].includes(normalized)) return 'pending';
   if (['cancelada', 'cancelado', 'cancelled', 'canceled', 'cancelamento', 'cancelada venda'].includes(normalized)) return 'cancelled';
   if (['devolvida', 'devolvido', 'devolucao', 'returned', 'estornada', 'estornado', 'estorno'].includes(normalized)) return 'returned';
   throw new Error(`Status não reconhecido: "${string(value)}". Confirme a situação da venda no arquivo.`);
@@ -341,9 +379,9 @@ export function normalizeImport(parsed: ParsedFile, options: ImportOptions = {},
   const issue = (row: number, field: string, message: string): void => { issues.push({ row, field, message }); };
   if (parsed.rows.length > IMPORT_LIMITS.rows) { issue(0, 'file', `Limite de ${IMPORT_LIMITS.rows} linhas excedido.`); return result; }
   for (const [field, column] of Object.entries(mapping)) if (column && !parsed.columns.includes(column)) issue(0, field, `A coluna "${column}" não existe neste arquivo.`);
-  if (!mapping.seller) issue(0, 'seller', 'Selecione a coluna do vendedor.');
-  if (!mapping.net && !mapping.gross) issue(0, 'net', 'Selecione uma coluna de valor líquido ou valor bruto.');
-  if (result.mode !== 'summary' && !mapping.date) issue(0, 'date', 'Selecione a coluna de data da venda.');
+  if (!mapping.seller) issue(0, 'seller', 'Não foi possível identificar o vendedor. Use um cabeçalho como Vendedor, Consultor ou Responsável no arquivo.');
+  if (!mapping.net && !mapping.gross) issue(0, 'net', 'Não foi possível identificar o valor. Use um cabeçalho como Valor Líquido, Valor Bruto ou Valor no arquivo.');
+  if (result.mode !== 'summary' && !mapping.date) issue(0, 'date', 'Não foi possível identificar a data da venda. Use um cabeçalho como Data, Data da Venda ou Dia no arquivo.');
   if (result.mode === 'summary' && !mapping.salesCount) issue(0, 'salesCount', 'O resumo consolidado precisa da quantidade real de vendas, além do valor.');
   if (issues.length) return result;
   const sellerIndex = new Map<string, Seller[]>();
@@ -353,6 +391,11 @@ export function normalizeImport(parsed: ParsedFile, options: ImportOptions = {},
   const aliasesByName = new Map(Object.entries(options.sellerAliases || {}).map(([name, id]) => [key(name), id]));
   const rows: RowSale[] = [];
   const allDates: string[] = [];
+  const expandedYears = new Set<string>();
+  const noteShortYear = (value: unknown): void => {
+    const match = /^\d{2}\/\d{2}\/(\d{2})(?:\s|$)/.exec(string(value));
+    if (match) expandedYears.add(`${match[1]} → ${(+match[1] <= 29 ? 2000 : 1900) + +match[1]}`);
+  };
   parsed.rows.forEach((record, index) => {
     const row = index + 2, before = issues.length;
     const read = (field: ImportField): unknown => mapping[field] ? record[mapping[field]!] : '';
@@ -365,13 +408,14 @@ export function normalizeImport(parsed: ParsedFile, options: ImportOptions = {},
     const rowDate = !empty(read('date')) ? checked('date', () => date(read('date')), '') : '';
     if (result.mode !== 'summary' && !rowDate) { if (empty(read('date'))) issue(row, 'date', 'Data da venda obrigatória.'); }
     if (rowDate) allDates.push(rowDate);
+    if (rowDate) noteShortYear(read('date'));
     const rowStatus = checked('status', () => status(read('status')), 'valid' as SaleStatus);
     const amount = (field: ImportField, fallback = 0): number => empty(read(field)) ? fallback : checked(field, () => money(read(field)), 0);
     let discount = amount('discount');
     const hasNet = !empty(read('net')), hasGross = !empty(read('gross'));
     if (!hasNet && !hasGross) issue(row, 'net', 'Valor da venda obrigatório.');
     let gross = amount('gross'), net = amount('net'), tradeIn = amount('tradeIn'), financed = amount('financed');
-    if (rowStatus !== 'valid') { gross = Math.abs(gross); net = Math.abs(net); discount = Math.abs(discount); tradeIn = Math.abs(tradeIn); financed = Math.abs(financed); }
+    if (rowStatus === 'cancelled' || rowStatus === 'returned') { gross = Math.abs(gross); net = Math.abs(net); discount = Math.abs(discount); tradeIn = Math.abs(tradeIn); financed = Math.abs(financed); }
     if (key(mapping.gross).includes('unitario')) gross *= empty(read('quantity')) ? 1 : checked('quantity', () => integer(read('quantity'), 1), 1);
     if (!hasGross) gross = net + discount;
     if (!hasNet) net = gross - discount;
@@ -394,6 +438,7 @@ export function normalizeImport(parsed: ParsedFile, options: ImportOptions = {},
     const embeddedTime = typeof sourceDate === 'number' && sourceDate % 1 !== 0 ? sourceDate : string(sourceDate).match(/[ T](\d{2}:\d{2}(?::\d{2})?)/)?.[1] || '';
     const rowTime = checked('time', () => time(empty(read('time')) ? embeddedTime : read('time')), '');
     if (typeof read('externalId') === 'number' && !Number.isSafeInteger(read('externalId'))) issue(row, 'externalId', 'Identificador numérico sem precisão ou não inteiro. Exporte o número da venda como texto.');
+    if (rowStatus === 'pending') warnings.push(`Linha ${row}: venda aberta preservada como pendente; não entra no faturamento nem na contagem de vendas concluídas.`);
     const sale: Sale = { id: '', externalId: string(read('externalId')), date: rowDate, time: rowTime, sellerId: seller?.id || '', product: string(read('product')), category: string(read('category')), quantity, grossCents: gross, discountCents: discount, netCents: net, tradeInCents: tradeIn, financedCents: financed, paymentMethod: string(read('paymentMethod')), financierId: financier?.id || '', status: rowStatus, fingerprint: '', batchId: '' };
     if (issues.length === before) rows.push({ sale, row, raw: hash(record), count });
   });
@@ -402,8 +447,8 @@ export function normalizeImport(parsed: ParsedFile, options: ImportOptions = {},
   let start = allDates[0] || '', end = allDates.at(-1) || '';
   if (result.mode === 'summary') {
     try {
-      if (options.startDate) start = date(options.startDate);
-      if (options.endDate) end = date(options.endDate);
+      if (options.startDate) { start = date(options.startDate); noteShortYear(options.startDate); }
+      if (options.endDate) { end = date(options.endDate); noteShortYear(options.endDate); }
     } catch (error) { issue(0, 'period', error instanceof Error ? error.message : 'Período inválido.'); }
     if (!start || !end) issue(0, 'period', 'Informe a data inicial e final do resumo consolidado. Não é possível presumir seu período.');
     if (start && end && start > end) issue(0, 'period', 'A data inicial deve ser anterior ou igual à final.');
@@ -411,12 +456,13 @@ export function normalizeImport(parsed: ParsedFile, options: ImportOptions = {},
   } else if (!options.mode && start && start !== end) result.mode = 'cumulative';
   else if (result.mode === 'daily' && start && start !== end) issue(0, 'mode', 'O arquivo contém várias datas. Selecione relatório acumulado.');
   result.periodStart = start; result.periodEnd = end;
+  if (expandedYears.size) warnings.push(`Anos de dois dígitos interpretados pela regra Excel (00–29 = 2000–2029; 30–99 = 1930–1999): ${[...expandedYears].sort().join(', ')}. Confira o ano e o período na prévia antes de confirmar.`);
   if (!rows.length && !issues.length) issue(0, 'file', 'Nenhuma linha de venda foi encontrada.');
   if (result.mode === 'summary') {
     if (!start || !end || start > end) return result;
     const groups = new Map<string, { amount: number; count: number; hashes: Set<string>; dates: Set<string> }>();
     for (const entry of rows) {
-      if (entry.sale.status !== 'valid') { warnings.push(`Linha ${entry.row}: resumo cancelado/devolvido não foi incorporado ao faturamento.`); continue; }
+      if (entry.sale.status !== 'valid') { warnings.push(`Linha ${entry.row}: resumo pendente, cancelado ou devolvido não foi incorporado ao faturamento.`); continue; }
       const group = groups.get(entry.sale.sellerId) || { amount: 0, count: 0, hashes: new Set<string>(), dates: new Set<string>() };
       if (group.hashes.has(entry.raw)) { issue(entry.row, 'salesCount', 'Resumo repetido para o mesmo vendedor e período; confira a duplicidade antes de importar.'); continue; }
       if (group.dates.size && (!entry.sale.date || group.dates.has('') || group.dates.has(entry.sale.date))) { issue(entry.row, 'salesCount', 'Há vários totais para o mesmo vendedor sem datas distintas. Consolide o relatório antes de importar para evitar sobreposição.'); continue; }

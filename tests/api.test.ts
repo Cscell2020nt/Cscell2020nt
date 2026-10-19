@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
+import * as XLSX from '@e965/xlsx';
 import { createApp, runReminder } from '../server/index.ts';
 import { Store } from '../server/store.ts';
 
@@ -30,11 +31,17 @@ async function fixture() {
     const form = new FormData(); form.append('file', new Blob([csv], {type: 'text/csv'}), 'vendas.csv'); form.append('options', JSON.stringify(options));
     return request('/api/imports/preview', {method: 'POST', body: form});
   }
+  async function previewWorkbook(buffer: Buffer, options: unknown = {}) {
+    const form = new FormData();
+    form.append('file', new Blob([Uint8Array.from(buffer)], {type: 'application/vnd.ms-excel'}), 'relatorio-sintetico.xls');
+    form.append('options', JSON.stringify(options));
+    return request('/api/imports/preview', {method: 'POST', body: form});
+  }
   async function close() {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     store.close(); rmSync(directory, {recursive: true, force: true});
   }
-  return {store, request, post, setup, preview, close, base};
+  return {store, request, post, setup, preview, previewWorkbook, close, base};
 }
 const report = (net = '1000,00', status = 'válida', id = 'A1', seller = 'Mirelly') => `Data;Vendedor;ID Venda;Produto;Valor Bruto;Desconto;Valor Líquido;Status\n19/10/2026;${seller};${id};Celular;${net};0;${net};${status}`;
 
@@ -101,6 +108,85 @@ test('imports deduplicate, require explicit update authorization and revert in s
     const empty = await f.post(`/api/imports/${confirmed.body.batch.id}/revert`, {});
     assert.equal(empty.status, 200); assert.equal(empty.body.data.sales.length, 0);
     assert.equal(empty.body.data.batches.every((batch: Json) => batch.status === 'reverted'), true);
+  } finally { await f.close(); }
+});
+
+test('legacy raw BIFF2 sales require seller confirmation, retain net amounts and exclude open sales', async () => {
+  const f = await fixture();
+  try {
+    await f.setup();
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+      ['Relatório sintético de vendas'],
+      [],
+      ['Número', 'Cliente', 'Vendedor', 'Dia', 'Situação', 'Desconto', 'Valor'],
+      [501, 'Cliente sintético A', 'Mirelly Silva', '19/10/26', 'FECHADA', 100, 900],
+      [502, 'Cliente sintético B', 'Nicolas', '19/10/26', 'FECHADA', 50, 450],
+      [503, 'Cliente sintético C', 'Vitória', '19/10/26', 'ABERTA', 0, 0],
+    ]), 'Vendas');
+    const makeBuffer = () => {
+      const bytes = XLSX.write(workbook, {type: 'buffer', bookType: 'biff2'}) as Buffer;
+      // SheetJS's BIFF2 writer replaces high bytes with underscores. Restore same-length
+      // Latin-1 text to represent Brazilian legacy exports without changing BIFF records.
+      for (const [encoded, original] of [['N_mero', 'Número'], ['Situa__o', 'Situação'], ['Vit_ria', 'Vitória']]) {
+        const offset = bytes.indexOf(Buffer.from(encoded, 'ascii'));
+        assert.ok(offset >= 0);
+        assert.equal(Buffer.byteLength(original, 'latin1'), encoded.length);
+        Buffer.from(original, 'latin1').copy(bytes, offset);
+      }
+      return bytes;
+    };
+    const buffer = makeBuffer();
+    assert.equal(buffer.readUInt16LE(0), 0x0009, 'A fixture deve usar BIFF2 bruto, sem contêiner OLE.');
+    const reread = XLSX.read(buffer, {type: 'buffer'});
+    const roundTrip = XLSX.utils.sheet_to_json<unknown[]>(reread.Sheets[reread.SheetNames[0]], {header: 1});
+    assert.deepEqual(roundTrip[2], ['Número', 'Cliente', 'Vendedor', 'Dia', 'Situação', 'Desconto', 'Valor']);
+    assert.equal(roundTrip[5][2], 'Vitória');
+    assert.equal(f.store.data().sellers.length, 4);
+    const initial = await f.previewWorkbook(buffer);
+    assert.equal(initial.status, 201, JSON.stringify(initial.body));
+    assert.deepEqual(initial.body.unresolvedSellers, ['Mirelly Silva']);
+    assert.equal((await f.post(`/api/imports/${initial.body.id}/confirm`, {})).status, 422);
+    assert.equal(f.store.data().sales.length, 0, 'Vendedor não confirmado não pode gravar vendas.');
+    const options = {mode: 'daily', sellerAliases: {'Mirelly Silva': 'mirelly'}};
+    const corrected = await f.post(`/api/imports/${initial.body.id}/repreview`, options);
+    assert.equal(corrected.status, 200, JSON.stringify(corrected.body));
+    assert.deepEqual(corrected.body.issues, []); assert.deepEqual(corrected.body.unresolvedSellers, []);
+    assert.equal(corrected.body.newCount, 3);
+    assert.equal(corrected.body.salesCount, 2, 'Uma venda aberta não entra na contagem válida.');
+    assert.equal(corrected.body.revenueCents, 135_000, 'Valor já líquido não deve receber o desconto outra vez.');
+    const mirelly = corrected.body.sales.find((sale: Json) => sale.externalId === '501');
+    assert.equal(mirelly.date, '2026-10-19'); assert.equal(mirelly.sellerId, 'mirelly');
+    assert.equal(mirelly.grossCents, 100_000); assert.equal(mirelly.discountCents, 10_000); assert.equal(mirelly.netCents, 90_000);
+    assert.equal(corrected.body.sales.find((sale: Json) => sale.externalId === '503').status, 'pending');
+    assert.equal(f.store.data().sales.length, 0, 'A prévia corrigida ainda não grava registros.');
+    const confirmed = await f.post(`/api/imports/${initial.body.id}/confirm`, {});
+    assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body));
+    assert.equal(confirmed.body.batch.addedCount, 3); assert.equal(confirmed.body.batch.salesCount, 2); assert.equal(confirmed.body.batch.revenueCents, 135_000);
+    assert.equal(confirmed.body.data.sales.length, 3);
+    const ranking = (await f.request('/api/ranking?from=2026-10-01&to=2026-10-31')).body.ranking;
+    assert.equal(ranking.reduce((sum: number, seller: Json) => sum + seller.count, 0), 2);
+    assert.equal(ranking.reduce((sum: number, seller: Json) => sum + seller.revenueCents, 0), 135_000);
+    assert.equal(ranking.find((seller: Json) => seller.sellerId === 'vitoria').count, 0);
+    const duplicate = await f.previewWorkbook(buffer, options);
+    assert.equal(duplicate.status, 201, JSON.stringify(duplicate.body));
+    assert.equal(duplicate.body.duplicateCount, 3); assert.equal(duplicate.body.newCount, 0); assert.equal(duplicate.body.updateCount, 0);
+    const repeated = await f.post(`/api/imports/${duplicate.body.id}/confirm`, {});
+    assert.equal(repeated.status, 200, JSON.stringify(repeated.body));
+    assert.equal(repeated.body.batch.ignoredCount, 3); assert.equal(repeated.body.data.sales.length, 3);
+    assert.equal(repeated.body.data.sales.filter((sale: Json) => sale.status === 'valid').length, 2);
+    XLSX.utils.sheet_add_aoa(workbook.Sheets.Vendas, [['FECHADA', 0, 200]], {origin: 'E6'});
+    const closed = await f.previewWorkbook(makeBuffer(), options);
+    assert.equal(closed.status, 201, JSON.stringify(closed.body));
+    assert.equal(closed.body.updateCount, 1); assert.equal(closed.body.duplicateCount, 2); assert.equal(closed.body.newCount, 0);
+    assert.equal((await f.post(`/api/imports/${closed.body.id}/confirm`, {})).status, 409, 'Fechar uma venda aberta deve exigir autorização para atualizar o registro.');
+    const updated = await f.post(`/api/imports/${closed.body.id}/confirm`, {allowUpdates: true});
+    assert.equal(updated.status, 200, JSON.stringify(updated.body));
+    assert.equal(updated.body.data.sales.length, 3, 'A venda fechada substitui a aberta com o mesmo número.');
+    assert.equal(updated.body.data.sales.find((sale: Json) => sale.externalId === '503').status, 'valid');
+    const closedRanking = (await f.request('/api/ranking?from=2026-10-01&to=2026-10-31')).body.ranking;
+    assert.equal(closedRanking.reduce((sum: number, seller: Json) => sum + seller.count, 0), 3);
+    assert.equal(closedRanking.reduce((sum: number, seller: Json) => sum + seller.revenueCents, 0), 155_000);
   } finally { await f.close(); }
 });
 

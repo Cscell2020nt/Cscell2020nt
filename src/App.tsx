@@ -6,6 +6,7 @@ import type { Analytics, AppData, Period, User } from '../shared/types';
 import { computeAnalytics, todayInBrazil } from '../shared/analytics';
 import { api } from './lib/api';
 import { dateLabel, integer, money, percent, shortMoney } from './lib/format';
+import { version } from '../package.json';
 import Imports from './pages/Imports';
 import { FinancePage, GoalsPage, HistoryPage, InsightsPage, RankingPage, ReportsPage, SalesPage, SellersPage, SettingsPage, TicketPage } from './pages/Management';
 
@@ -126,7 +127,7 @@ export default function App() {
         <div className="page-topline"><span><span className="live-dot" /> VISÃO DO NEGÓCIO</span><span className="today-label"><CalendarDays size={13} />{new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' }).format(new Date())}</span></div>
         {(page === 'dashboard' || !['imports', 'settings', 'history'].includes(page)) && <div className={page === 'dashboard' ? 'page-heading' : 'page-period-toolbar'}>{page === 'dashboard' ? <div><h1>{session.user.role === 'admin' ? 'Visão geral da empresa' : 'Seus resultados'}</h1><p>Cada resultado conta. Acompanhe o que move o seu negócio.</p></div> : <span>PERÍODO SELECIONADO</span>}<div className="page-actions"><label className="period-picker"><CalendarDays size={16} /><span>{monthLabel(month)}</span><input type="month" aria-label="Selecionar mês" value={month} onChange={e => { if (/^\d{4}-\d{2}$/.test(e.target.value)) setMonth(e.target.value); }} /><ChevronDown size={14} /></label>{page === 'dashboard' && session.user.role === 'admin' && <button className="btn btn-primary" onClick={() => navigate('imports')}><UploadCloud size={17} />Importar relatório</button>}</div></div>}
         {page === 'dashboard' ? <Dashboard data={data} analytics={analytics} period={period} user={session.user} navigate={navigate} refresh={refresh} refreshing={refreshing} /> : pages[page]}
-        <footer className="main-footer"><span>MINAS CELL <span className="footer-dot">·</span> Gestão inteligente, resultados reais.</span><span><ShieldCheck size={12} /> Dados persistidos neste ambiente</span></footer>
+        <footer className="main-footer"><span>MINAS CELL <span className="footer-dot">·</span> Gestão inteligente, resultados reais. <span className="footer-dot">·</span> v{version}</span><span><ShieldCheck size={12} /> Dados persistidos neste ambiente</span></footer>
       </main>
     </div>
     {toast && <div className={`toast ${toast.type === 'error' ? 'toast-error' : ''}`} role={toast.type === 'error' ? 'alert' : 'status'}>{toast.type === 'error' ? <CircleHelp size={20} /> : <CheckCircle2 size={20} />}<span>{toast.message}</span><button aria-label="Fechar aviso" onClick={() => setToast(null)}><X size={16} /></button></div>}

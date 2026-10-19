@@ -11,6 +11,29 @@ const table = (rows: Record<string, unknown>[]): ParsedFile => ({ columns: [...n
 const normalize = (rows: Record<string, unknown>[], options = {}) => normalizeImport(table(rows), options, sellers, financiers);
 const basic = { Data: '18/10/2026', Vendedor: 'Mirelly', 'Número da venda': 'A1', 'Valor Líquido': '1.234,56' };
 
+function legacyWorkbook(matrix: unknown[][], version: 'biff2' | 'biff3' | 'biff4' = 'biff2'): Buffer {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(matrix), 'Vendas');
+  const buffer: Buffer = XLSX.write(workbook, { type: 'buffer', bookType: version as XLSX.BookType });
+  // SheetJS's legacy writer explicitly lacks codepage support and replaces accents
+  // with underscores. Restore synthetic Latin-1 label bytes to test actual BIFF
+  // decoding; all data below is generated and uses generic customer names.
+  for (let offset = 0; offset + 4 <= buffer.length;) {
+    const type = buffer.readUInt16LE(offset), length = buffer.readUInt16LE(offset + 2);
+    if (type === 0x0004) {
+      const row = buffer.readUInt16LE(offset + 4), column = buffer.readUInt16LE(offset + 6);
+      const value = matrix[row]?.[column];
+      if (typeof value === 'string') {
+        const encoded = Buffer.from(value, 'latin1');
+        assert.equal(encoded.length, buffer[offset + 11]);
+        encoded.copy(buffer, offset + 12);
+      }
+    }
+    offset += length + 4;
+  }
+  return buffer;
+}
+
 test('detects alternate Portuguese columns and chooses explicit net over alternative totals', () => {
   const mapping = detectMapping(['Data da Venda', 'Consultor', 'Código da operação', 'Valor', 'Total', 'Valor Líquido', 'Entrada com aparelho usado', 'Desconto comercial']);
   assert.equal(mapping.seller, 'Consultor');
@@ -89,6 +112,79 @@ test('honors the 1904 workbook date epoch', async () => {
   const result = normalizeImport(await parseFile(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), 'date1904.xlsx'), {}, sellers, financiers);
   assert.deepEqual(result.issues, []);
   assert.equal(result.sales[0].date, '2026-10-18');
+});
+
+for (const version of ['biff2', 'biff3', 'biff4'] as const) {
+  test(`imports a raw ${version} transaction report with accents, legacy dates and pending sales`, async () => {
+    const matrix = [
+      ['Listagem de Vendas'],
+      ['Número', 'Cliente', 'Vendedor', 'Dia', 'Situação', 'Desconto', 'Valor'],
+      [],
+      [1001, 'Cliente genérico A', 'Mirelly', '01/10/26', 'Fechada', 100, 900],
+      [1002, 'Cliente genérico B', 'Vitória', '19/10/26', 'Fechada', 50.0002, 450],
+      [1003, 'Cliente genérico C', 'Thales', '19/10/26', 'ABERTA', 0, 0],
+      [1004, 'Cliente genérico D', 'Nicolas', '19/10/26', 'Fechado', 0, 0.01],
+    ];
+    const buffer = legacyWorkbook(matrix, version);
+    assert.notEqual(buffer.subarray(0, 8).toString('hex'), 'd0cf11e0a1b11ae1');
+    const parsed = await parseFile(buffer, 'relatorio-legado.xls');
+    assert.deepEqual(parsed.columns, ['Número', 'Cliente', 'Vendedor', 'Dia', 'Situação', 'Desconto', 'Valor']);
+    assert.equal(parsed.rows.length, 4);
+    assert.equal(parsed.rows[1].Cliente, 'Cliente genérico B');
+    const result = normalizeImport(parsed, {}, sellers, financiers);
+    assert.deepEqual(result.issues, []);
+    assert.equal(result.mode, 'cumulative');
+    assert.equal(result.periodStart, '2026-10-01');
+    assert.equal(result.periodEnd, '2026-10-19');
+    assert.equal(result.sales.filter((sale) => sale.status === 'valid').length, 3);
+    assert.equal(result.sales.filter((sale) => sale.status === 'pending').length, 1);
+    assert.equal(result.sales.filter((sale) => sale.status === 'valid').reduce((sum, sale) => sum + sale.netCents, 0), 135001);
+    assert.equal(result.sales[0].grossCents, 100000);
+    assert.equal(result.sales[0].netCents, 90000);
+    assert.equal(result.sales[1].discountCents, 5000);
+    assert.equal(result.sales[1].tradeInCents, 0);
+    assert.equal(result.sales[1].sellerId, 's2');
+    assert.ok(result.warnings.some((warning) => warning.includes('26 → 2026')));
+    assert.ok(result.warnings.some((warning) => warning.includes('pendente')));
+  });
+}
+
+test('raw BIFF report seller variations require confirmed aliases even when other fields are recognized', async () => {
+  const buffer = legacyWorkbook([
+    ['Número', 'Cliente', 'Vendedor', 'Dia', 'Situação', 'Desconto', 'Valor'],
+    [1001, 'Cliente genérico', 'Mirelly Silva', '19/10/26', 'Fechada', 100, 900],
+  ]);
+  const parsed = await parseFile(buffer, 'vendas.xls');
+  const unresolved = normalizeImport(parsed, {}, sellers, financiers);
+  assert.deepEqual(unresolved.unresolvedSellers, ['Mirelly Silva']);
+  assert.equal(unresolved.sales.length, 0);
+  const confirmed = normalizeImport(parsed, { sellerAliases: { 'Mirelly Silva': 's0' } }, sellers, financiers);
+  assert.deepEqual(confirmed.issues, []);
+  assert.equal(confirmed.sales[0].netCents, 90000);
+});
+
+test('two-digit date years use the deterministic Excel boundary and report every interpreted year', () => {
+  const result = normalize(['00', '29', '30', '99'].map((year, index) => ({ ...basic, Data: `01/01/${year}`, 'Número da venda': `YEAR-${index}` })));
+  assert.deepEqual(result.issues, []);
+  assert.deepEqual(result.sales.map((sale) => sale.date), ['2000-01-01', '2029-01-01', '1930-01-01', '1999-01-01']);
+  const warning = result.warnings.find((entry) => entry.includes('Anos de dois dígitos')) || '';
+  for (const year of ['00 → 2000', '29 → 2029', '30 → 1930', '99 → 1999']) assert.ok(warning.includes(year));
+  assert.ok(normalize([{ ...basic, Data: '29/02/29' }]).issues.some((issue) => issue.field === 'date'));
+  assert.equal(normalize([{ ...basic, Data: '29/02/00' }]).sales[0].date, '2000-02-29');
+});
+
+test('legacy BIFF validation rejects forged BOF headers, truncated records, missing EOF and trailing payload', async () => {
+  const valid = legacyWorkbook([['Dia', 'Vendedor', 'Valor'], ['19/10/26', 'Nicolas', 100]]);
+  const badVersion = Buffer.from(valid); badVersion.writeUInt16LE(8, 4);
+  const badBofLength = Buffer.from(valid); badBofLength.writeUInt16LE(6, 2);
+  const badDocumentType = Buffer.from(valid); badDocumentType.writeUInt16LE(0x20, 6);
+  const overflow = Buffer.from(valid); overflow.writeUInt16LE(65535, 10);
+  const badEof = Buffer.from(valid); badEof.writeUInt16LE(1, badEof.length - 2);
+  for (const buffer of [badVersion, badBofLength, badDocumentType, overflow, valid.subarray(0, -1), valid.subarray(0, -4), badEof, Buffer.concat([valid, Buffer.from('payload')]), Buffer.from('09000400020010000a000000', 'hex')]) {
+    await assert.rejects(parseFile(buffer, 'forjado.xls'), ImportError);
+  }
+  await assert.rejects(parseFile(valid, 'nome-incorreto.xlsx'), ImportError);
+  await assert.rejects(parseFile(valid, 'nome-incorreto.csv'), ImportError);
 });
 
 test('preserves zero-padded Excel transaction numbers and rejects already imprecise numeric ids', async () => {

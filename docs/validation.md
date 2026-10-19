@@ -6,7 +6,7 @@ Validação realizada em 19/10/2026, com Node.js 24 e Chromium Linux.
 | --- | --- |
 | Instalação pelo lockfile (`npm ci`) | Passou |
 | TypeScript e build de produção | Passaram |
-| `npm test` | 51 testes passaram; nenhum pulado |
+| `npm test` | 58 testes passaram; nenhum pulado |
 | `npm run test:e2e` | Passou em Chromium com banco temporário |
 | Auditoria npm, incluindo dependências de desenvolvimento | Nenhuma vulnerabilidade conhecida na consulta realizada |
 
@@ -14,8 +14,17 @@ Os testes de importação leem arquivos CSV, XLS, XLSX e PDF digitais gerados
 durante os testes. Exercitam os quatro vendedores, centavos, troca de aparelho,
 desconto, pagamentos financiados, linhas de itens, cancelamentos, resumos,
 períodos acumulados, aliases, datas Excel, arquivos inválidos e limites.
-Não são exportações reais do SH Sistemas: a homologação com um relatório
-da loja continua necessária para confirmar o mapeamento desse sistema.
+As fixtures persistidas são sintéticas e não contêm dados de clientes. A versão
+0.1.1 também foi validada com um relatório real de exportação BIFF2, fornecido pelo
+usuário, em banco temporário descartável. O arquivo e seus registros não foram
+incluídos no repositório nem no banco da instalação do usuário.
+
+Essa validação real exercitou upload, reconhecimento automático das colunas,
+datas com ano curto, confirmação de vínculos de vendedores, cadastro de novos
+vendedores dentro da prévia, confirmação e reimportação sem duplicação.
+O painel manual de mapeamento de colunas foi retirado da interface. Registros em
+aberto são preservados para atualização posterior e excluídos dos indicadores de
+vendas concluídas. Layouts diferentes de exportação ainda exigem homologação.
 
 O E2E executa o build de produção com uma instância SQLite descartável e verifica:
 
@@ -38,7 +47,7 @@ temporários fora do checkout.
 
 - Aplicar e validar a migração PostgreSQL/Supabase em um projeto de homologação;
   o aplicativo atual usa exclusivamente a API local e SQLite.
-- Homologar uma exportação real da loja, especialmente PDFs com outros layouts.
+- Homologar outros layouts de exportação da loja, especialmente PDFs.
 - OCR, Web Push com página fechada, WhatsApp, SH Sistemas e outras integrações.
 - Comparativos mensais completos, análises semanais avançadas e demais recursos
   das próximas fases do pedido.
