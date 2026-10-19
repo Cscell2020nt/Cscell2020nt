@@ -33,7 +33,7 @@ const credentials = z.object({ email: z.email().max(254).transform(value => valu
 const newAccount = credentials.extend({ name: z.string().trim().min(2).max(80) });
 const importOptionsSchema = z.object({
   mode: z.enum(['daily', 'cumulative', 'summary']).optional(),
-  mapping: z.record(z.enum(['date','time','seller','externalId','product','quantity','category','gross','discount','net','tradeIn','paymentMethod','financier','financed','status','salesCount']), z.string().max(200)).optional(),
+  mapping: z.record(z.enum(['date','time','seller','customer','externalId','product','quantity','category','gross','discount','net','tradeIn','paymentMethod','financier','financed','status','salesCount']), z.string().max(200)).optional(),
   sellerAliases: z.record(z.string().max(200), z.string().max(200)).optional(),
   startDate: isoDate.optional(), endDate: isoDate.optional(), allowSummaryReplacement: z.boolean().optional(),
 }).refine(options => !options.startDate || !options.endDate || options.startDate <= options.endDate, 'O início deve ser anterior ao fim.');
@@ -44,7 +44,7 @@ function visibleData(data: AppData, user: User): AppData {
 }
 function normalizeName(name: string) { return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').trim(); }
 function cleanSale(sale: Sale) {
-  const { id: _id, batchId: _batch, fingerprint: _fingerprint, ...content } = sale;
+  const { id: _id, batchId: _batch, fingerprint: _fingerprint, commissionCategory: _category, ...content } = sale;
   return JSON.stringify(Object.fromEntries(Object.entries(content).sort(([a], [b]) => a.localeCompare(b))));
 }
 function saleFingerprint(sale: Sale) { return sale.fingerprint || createHash('sha256').update(cleanSale(sale)).digest('hex'); }
@@ -87,7 +87,7 @@ function makePlan(normalized: NormalizedImport, data: AppData, options: ImportOp
       old = candidates[0];
     }
     // A report that omits an ID can never erase an identity established previously.
-    const reconciled = {...incoming, externalId: incoming.externalId || old?.externalId || ''};
+    const reconciled = {...incoming, ...(old?.commissionCategory ? {commissionCategory: old.commissionCategory} : {}), externalId: incoming.externalId || old?.externalId || ''};
     if (old && cleanSale(old) === cleanSale(reconciled)) { plan.duplicates++; continue; }
     if (old && targetedIds.has(old.id)) {
       plan.issues.push({row: 0, field: 'externalId', message: 'Duas linhas tentam alterar a mesma venda existente. Confirme os identificadores da transação.'});
@@ -232,6 +232,19 @@ export function createApp(store = new Store()) {
     if (!store.get('sellers', id)) throw new HttpError(404, 'Vendedor não encontrado.');
     if (store.all<Seller>('sellers').some(seller => seller.id !== id && normalizeName(seller.name) === normalizeName(input.name))) throw new HttpError(409, 'Já existe um vendedor com esse nome.');
     store.transaction(() => { store.put('sellers', {...input, id}); store.audit(req.user!.name, 'seller.updated', `Vendedor atualizado: ${input.name}.`); });
+    res.json({data: store.data()});
+  });
+  app.put('/api/sales/:id/commission-category', requireAdmin, (req, res) => {
+    const {category} = z.object({category: z.enum(['accessories', 'phones', 'speakers']).nullable()}).strict().parse(req.body);
+    const sale = store.get<Sale>('sales', String(req.params.id));
+    if (!sale) throw new HttpError(404, 'Venda não encontrada.');
+    const updated = {...sale};
+    if (category) updated.commissionCategory = category;
+    else delete updated.commissionCategory;
+    store.transaction(() => {
+      store.put('sales', updated);
+      store.audit(req.user!.name, 'sale.commission-category', `Venda ${sale.externalId || sale.id}: ${sale.commissionCategory || 'automática'} → ${category || 'automática'}.`);
+    });
     res.json({data: store.data()});
   });
   app.post('/api/financiers', requireAdmin, (req, res) => {

@@ -211,17 +211,22 @@ ambiente isolado e não precisa de outro Git worktree. O preparo reutilizável �
 ambiente são operações separadas de iniciar o processo local.
 
 
-## Produtos e comissão (0.1.2)
+## Produtos e comissão (0.1.3)
 
-O menu **Produtos e comissão** mostra unidades e valores líquidos por vendedor para as categorias Celulares e Acessórios. O vendedor vê seus próprios dados; o administrador vê a equipe.
+O menu **Produtos e comissão** mostra unidades e valores líquidos por vendedor para as categorias Celulares, Acessórios e Caixas de som. O vendedor vê seus próprios dados; o administrador vê a equipe.
 
 - Acessórios: acima de R$ 10.000 no mês, comissão de 3% sobre todo o valor mensal da categoria. Exatamente R$ 10.000 ainda não libera a comissão.
 - Celulares: 1,25%; sobe para 1,75% quando todas as vendas válidas do vendedor nos 90 dias encerrados na referência ultrapassam R$ 100.000. Exatamente R$ 100.000 permanece em 1,25%. A faixa na referência é aplicada ao valor mensal de celulares.
+- Caixas de som: 3% sobre o valor líquido, sem meta mínima.
 - Referência: hoje em meses em andamento ou o último dia do mês selecionado em meses encerrados. São 90 dias corridos incluindo a referência. Importe todo esse histórico para conferir a faixa; o sistema só conhece os dados importados.
 - A estimativa utiliza valores líquidos; pagamentos com troca não são descontados novamente. Canceladas, devolvidas e pendentes são excluídas.
 
 Para detalhar categorias, exporte uma linha por item com **Número da venda, Data, Vendedor, Categoria, Produto, Quantidade, Total do item**. Use categorias **Celulares** e **Acessórios**. Valores de itens da mesma transação são somados uma vez no faturamento; as unidades continuam separadas. Totais da transação repetidos em vários itens não são rateados. Quantidades ausentes aparecem como indisponíveis.
 
-Relatórios contendo somente totais de vendas, incluindo Relat2.xls, continuam importando normalmente, mas não permitem descobrir as categorias. A tela sinaliza dados incompletos e não fecha a comissão nessas condições. Vendas antigas sem itens precisam de reimportação detalhada com o mesmo número da venda e autorização para atualizar. Resumos consolidados também não fornecem composição de produtos.
+Relatórios contendo somente totais de vendas, incluindo Relat2.xls, usam a regra da loja quando a coluna **Cliente** está presente: **Consumidor final → Acessórios; cliente com nome → Celulares**. A comparação ignora maiúsculas, acentos, espaços e pontuação. Não há classificação automática se o cliente estiver vazio. Categorias explícitas de itens têm prioridade sobre essa regra.
+
+Em **Vendas diárias**, o administrador pode escolher **Caixa de som · 3%** na coluna **Classificação da comissão**, corrigir para Celulares ou Acessórios ou voltar à opção Automática. A escolha aplica o valor total da venda à categoria e é auditada. Não altera o faturamento nem inventa unidades. Vendedores apenas consultam. Marcas manuais permanecem ao reimportar a mesma venda. Confira as caixas de som antes de fechar as comissões; inicialmente, nomes de clientes entram como celulares.
+
+Instalações anteriores precisam **reimportar o relatório com Cliente**, mantendo o número original das vendas e autorizando atualizações na prévia. Isso preenche o campo nas vendas existentes sem duplicá-las. Quantidades não são recuperáveis por esse relatório e permanecem indisponíveis. Sem cliente, itens ou classificação manual, a tela informa dados incompletos. Resumos consolidados não fornecem composição de produtos.
 
 Para atualizar uma instalação Windows, encerre o aplicativo com Ctrl+C e copie os arquivos desta versão para a pasta da instalação original, preservando **.data** e **.env**. Execute INICIAR-WINDOWS.bat novamente. Não troque o banco por uma pasta nova vazia.

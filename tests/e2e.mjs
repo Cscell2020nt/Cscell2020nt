@@ -238,6 +238,26 @@ try {
   await sellerPage.setViewportSize({width: 390, height: 844});
   assert.ok(await sellerPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Comissões sem overflow em celular');
   await sellerContext.close();
+  const classifiedCsv = csv.split(/\r?\n/).map((line, index) => `${line};${index === 0 ? 'Cliente' : 'Cliente Exemplo'}`).concat([
+    `${reportDate};Mirelly;E2E-CONSUMER;;11000,00;0,00;11000,00;válida;CONSUMIDOR FINAL`,
+    `${reportDate};Mirelly;E2E-SPEAKER;;1000,00;0,00;1000,00;válida;Outro Cliente Exemplo`,
+  ]).join('\r\n');
+  const classifiedPreview = await json(await context.request.post('/api/imports/preview', {multipart: {file: {name: 'clientes-sinteticos.csv', mimeType: 'text/csv', buffer: Buffer.from(classifiedCsv)}}}), 201);
+  await json(await context.request.post(`/api/imports/${classifiedPreview.id}/confirm`, {data: {allowUpdates: true}}));
+  await page.reload({waitUntil: 'networkidle'});
+  await navigate(page, 'Vendas diárias');
+  const classification = page.getByLabel('Classificação da venda E2E-SPEAKER', {exact: true});
+  await classification.selectOption('speakers');
+  await page.getByRole('status').filter({hasText: 'Classificação da comissão atualizada.'}).waitFor();
+  await page.reload({waitUntil: 'networkidle'});
+  await navigate(page, 'Vendas diárias');
+  assert.equal(await page.getByLabel('Classificação da venda E2E-SPEAKER', {exact: true}).inputValue(), 'speakers');
+  await navigate(page, 'Produtos e comissão');
+  const sellerCommission = page.locator('article.panel').filter({has: page.getByRole('heading', {name: 'Mirelly', exact: true})});
+  assert.ok(normalizeText(await sellerCommission.innerText()).includes('R$ 372,50'));
+  assert.ok(normalizeText(await sellerCommission.getByRole('row').filter({hasText: 'Caixas de som'}).innerText()).includes('R$ 30,00'));
+  await noOverflow(page, 'Comissões mobile');
+  console.log('E2E: cliente classifica vendas; caixa de som marcada na interface, persistente após recarregar; comissão conferida.');
   assert.deepEqual(browserErrors, [], `Erros de navegador: ${browserErrors.join('; ')}`);
   console.log('E2E: login de vendedor, dados próprios, ranking agregado e mutações administrativas bloqueadas.');
   console.log('E2E OK: produção validada; banco temporário será removido.');

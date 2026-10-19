@@ -22,6 +22,7 @@ const aliases: Record<ImportField, string[]> = {
   time: ['hora', 'horario', 'hora venda', 'hora da venda'],
   seller: ['vendedor', 'vendedora', 'nome vendedor', 'nome do vendedor', 'consultor', 'consultora', 'responsavel', 'funcionario', 'colaborador'],
   externalId: ['numero venda', 'numero da venda', 'n venda', 'venda', 'id venda', 'codigo venda', 'codigo da venda', 'numero pedido', 'pedido', 'codigo operacao', 'codigo da operacao', 'operacao', 'transacao', 'id transacao', 'cupom', 'nota fiscal', 'numero'],
+  customer: ['cliente', 'nome cliente', 'nome do cliente'],
   product: ['produto', 'produto vendido', 'descricao', 'descricao produto', 'item', 'nome produto'],
   quantity: ['quantidade', 'qtd', 'qtde', 'qtd itens', 'quantidade itens'],
   category: ['categoria', 'grupo', 'grupo produto'],
@@ -439,7 +440,7 @@ export function normalizeImport(parsed: ParsedFile, options: ImportOptions = {},
     const rowTime = checked('time', () => time(empty(read('time')) ? embeddedTime : read('time')), '');
     if (typeof read('externalId') === 'number' && !Number.isSafeInteger(read('externalId'))) issue(row, 'externalId', 'Identificador numérico sem precisão ou não inteiro. Exporte o número da venda como texto.');
     if (rowStatus === 'pending') warnings.push(`Linha ${row}: venda aberta preservada como pendente; não entra no faturamento nem na contagem de vendas concluídas.`);
-    const sale: Sale = { id: '', externalId: string(read('externalId')), date: rowDate, time: rowTime, sellerId: seller?.id || '', product: string(read('product')), category: string(read('category')), quantity, grossCents: gross, discountCents: discount, netCents: net, tradeInCents: tradeIn, financedCents: financed, paymentMethod: string(read('paymentMethod')), financierId: financier?.id || '', status: rowStatus, fingerprint: '', batchId: '' };
+    const sale: Sale = { id: '', externalId: string(read('externalId')), date: rowDate, time: rowTime, sellerId: seller?.id || '', customer: string(read('customer')), product: string(read('product')), category: string(read('category')), quantity, grossCents: gross, discountCents: discount, netCents: net, tradeInCents: tradeIn, financedCents: financed, paymentMethod: string(read('paymentMethod')), financierId: financier?.id || '', status: rowStatus, fingerprint: '', batchId: '' };
     if (issues.length === before) rows.push({ sale, row, raw: hash(record), count, quantityKnown: !empty(read('quantity')) });
   });
   result.unresolvedSellers = [...unresolved];

@@ -9,6 +9,8 @@ export interface Sale {
   product: string; category: string; quantity: number; grossCents: number;
   discountCents: number; netCents: number; tradeInCents: number;
   financedCents: number; paymentMethod: string; financierId: string;
+  customer?: string;
+  commissionCategory?: 'accessories' | 'phones' | 'speakers';
   items?: SaleItem[];
   status: SaleStatus; fingerprint: string; batchId: string;
 }
@@ -23,7 +25,7 @@ export interface Settings {
   reminderTime: string; timezone: string; alertThreshold: number;
 }
 export type ImportMode = 'daily' | 'cumulative' | 'summary';
-export type ImportField = 'date' | 'time' | 'seller' | 'externalId' | 'product' | 'quantity' | 'category' | 'gross' | 'discount' | 'net' | 'tradeIn' | 'paymentMethod' | 'financier' | 'financed' | 'status' | 'salesCount';
+export type ImportField = 'date' | 'time' | 'seller' | 'customer' | 'externalId' | 'product' | 'quantity' | 'category' | 'gross' | 'discount' | 'net' | 'tradeIn' | 'paymentMethod' | 'financier' | 'financed' | 'status' | 'salesCount';
 export type ColumnMapping = Partial<Record<ImportField, string>>;
 export interface ImportIssue { row: number; field: string; message: string }
 export interface ImportOptions {

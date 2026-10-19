@@ -279,3 +279,39 @@ test('São Paulo reminder persists once per open day independently of browser ac
     assert.equal(confirmed.status, 200); assert.ok(day);
   } finally { await f.close(); }
 });
+
+test('classificação manual exige administrador, é auditada e permanece na reimportação', async () => {
+  const f = await fixture();
+  try {
+    await f.setup();
+    const csv = 'Dia;Vendedor;Número;Cliente;Valor\n19/10/26;Mirelly;C1;Cliente Exemplo;1000,00';
+    const preview = await f.preview(csv);
+    assert.equal(preview.status, 201);
+    assert.equal(preview.body.sales[0].customer, 'Cliente Exemplo');
+    const confirmed = await f.post(`/api/imports/${preview.body.id}/confirm`, {});
+    assert.equal(confirmed.status, 200);
+    const id = confirmed.body.data.sales[0].id;
+    const path = `/api/sales/${id}/commission-category`;
+    const set = (category: unknown) => f.request(path, {method: 'PUT', body: JSON.stringify({category})});
+    assert.equal((await set('invalid')).status, 400);
+    const marked = await set('speakers');
+    assert.equal(marked.status, 200);
+    assert.equal(marked.body.data.sales[0].netCents, 100_000);
+    assert.equal(marked.body.data.sales[0].commissionCategory, 'speakers');
+    assert.ok(marked.body.data.audit.some((entry: Json) => entry.action === 'sale.commission-category'));
+    const repeated = await f.preview(csv);
+    assert.equal(repeated.body.duplicateCount, 1);
+    await f.post(`/api/imports/${repeated.body.id}/confirm`, {});
+    assert.equal(f.store.data().sales[0].commissionCategory, 'speakers');
+    const changed = await f.preview(csv.replace('1000,00', '1500,00'));
+    assert.equal(changed.body.updateCount, 1);
+    await f.post(`/api/imports/${changed.body.id}/confirm`, {allowUpdates: true});
+    assert.equal(f.store.data().sales[0].commissionCategory, 'speakers');
+    assert.equal(f.store.data().sales[0].netCents, 150_000);
+    assert.equal((await set(null)).body.data.sales[0].commissionCategory, undefined);
+    await f.post('/api/users', {name: 'Vendedor Exemplo', email: 'seller-class@example.com', password: 'senha-vendedor-segura', sellerId: 'mirelly'});
+    await f.post('/api/logout', {});
+    await f.post('/api/login', {email: 'seller-class@example.com', password: 'senha-vendedor-segura'});
+    assert.equal((await set('speakers')).status, 403);
+  } finally { await f.close(); }
+});

@@ -45,3 +45,30 @@ test('relatório sem itens e totais repetidos não inventam valores por categori
   const report = normalizeImport({ rows: repeated, columns: Object.keys(repeated[0]), warnings: [] }, {}, [seller], []);
   assert.equal(calculate(report.sales).incomplete, true);
 });
+
+test('regra do cliente separa valores sem inventar unidades e caixa de som paga 3% sem meta', () => {
+  const consumer = sale('consumer', '', 1_100_000);
+  consumer.items = [{product: '', category: '', quantity: null, netCents: 1_100_000}];
+  consumer.customer = ' CONSUMIDOR FINAL ';
+  const named = {...consumer, id: 'named', netCents: 200_000, customer: 'Cliente Exemplo'};
+  const speaker = {...named, id: 'speaker', netCents: 50_000, commissionCategory: 'speakers' as const};
+  const result = calculate([consumer, named, speaker]);
+  assert.equal(result.accessories.revenueCents, 1_100_000);
+  assert.equal(result.phones.revenueCents, 200_000);
+  assert.equal(result.speakers.revenueCents, 50_000);
+  assert.equal(result.accessories.missingQuantity, true);
+  assert.equal(result.phones.missingQuantity, true);
+  assert.equal(result.speakerCommission, 1500);
+  assert.equal(result.accessoryCommission, 33_000);
+  assert.equal(result.totalCents, 37_000);
+  assert.equal(result.incomplete, false);
+  const missing = {...named, id: 'empty', customer: '  '};
+  assert.equal(calculate([missing]).incomplete, true);
+});
+
+test('categoria explícita por item prevalece sobre cliente', () => {
+  const result = calculate([{...sale('detailed', 'Acessórios', 20_000, 3), customer: 'Cliente Exemplo'}]);
+  assert.equal(result.accessories.revenueCents, 20_000);
+  assert.equal(result.accessories.quantity, 3);
+  assert.equal(result.phones.revenueCents, 0);
+});
