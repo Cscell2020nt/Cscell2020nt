@@ -1,0 +1,25 @@
+MINAS CELL — COMO ABRIR NO COMPUTADOR
+
+1. Instale o Node.js 24 LTS pelo site oficial https://nodejs.org.
+2. Extraia o arquivo ZIP. Não execute dentro da pasta compactada.
+3. No Windows, dê dois cliques em INICIAR-WINDOWS.bat na pasta minas-cell.
+   Na primeira execução, aguarde a instalação das dependências.
+4. Mantenha a janela do terminal aberta. Abra no navegador o endereço
+   indicado pelo Vite no campo Local.
+5. Na tela inicial, crie seu administrador. Não há senha padrão.
+6. Defina suas metas e importe um relatório real, confira os dados e confirme.
+
+Outros sistemas: abra um terminal nesta pasta e execute:
+  npm ci
+  npm run dev
+Depois abra o endereço Local mostrado no terminal.
+
+Os dados ficam no diretório .data desta instalação. Não apague essa pasta.
+Antes de copiar o banco para backup, encerre o aplicativo e mantenha todos os
+arquivos de .data juntos. Não envie essa pasta por mensagem nem a um repositório.
+Para encerrar o aplicativo, pressione Ctrl+C no terminal.
+
+Este pacote usa banco SQLite local; não precisa de Supabase para iniciar.
+Para acesso por um link na internet ou uso por vários dispositivos, será
+necessária hospedagem com armazenamento persistente e HTTPS.
+Detalhes técnicos, testes e limitações: README.md e docs/validation.md.
