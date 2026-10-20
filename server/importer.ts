@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { extname } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { parse } from 'csv-parse/sync';
+import { readHtmlTables } from './html.ts';
 import * as XLSX from '@e965/xlsx';
 import * as codepages from '@e965/xlsx/dist/cpexcel.full.mjs';
 import type { ColumnMapping, Financier, ImportField, ImportIssue, ImportOptions, NormalizedImport, ParsedFile, Sale, SaleStatus, Seller } from '../shared/types.ts';
@@ -241,7 +242,22 @@ async function parseFileContents(buffer: Buffer, filename: string): Promise<Pars
   if (!buffer.length) throw new Error('O arquivo está vazio.');
   if (buffer.length > IMPORT_LIMITS.bytes) throw new Error('O arquivo excede o limite de 10 MB.');
   const extension = extname(filename).toLowerCase();
-  if (!['.csv', '.xlsx', '.xls', '.pdf'].includes(extension)) throw new Error('Formato não aceito. Envie CSV, XLSX, XLS ou PDF.');
+  if (!['.csv', '.xlsx', '.xls', '.pdf', '.html', '.htm'].includes(extension)) throw new Error('Formato não aceito. Envie CSV, XLSX, XLS, PDF ou HTML.');
+  if (extension === '.html' || extension === '.htm') {
+    const html = readHtmlTables(buffer, IMPORT_LIMITS);
+    const candidates: ParsedFile[] = [];
+    for (const matrix of html.tables) {
+      if (!matrix.slice(0, 30).some(row => headerScore(row) >= 3)) continue;
+      candidates.push(makeTable(matrix, [...html.warnings]));
+    }
+    if (!candidates.length) throw new Error('Não foi encontrada uma tabela HTML com cabeçalhos e dados legíveis.');
+    const first = candidates[0];
+    const signature = first.columns.map(key).join('|');
+    if (candidates.some(table => table.columns.map(key).join('|') !== signature)) throw new Error('O HTML contém tabelas de relatórios diferentes. Exporte um relatório por arquivo.');
+    const rows = candidates.flatMap(table => table.rows.filter(row => !table.columns.every(column => key(row[column]) === key(column))));
+    if (rows.length > IMPORT_LIMITS.rows) throw new Error('O HTML excede o limite de linhas.');
+    return {...first, rows, referenceText: html.referenceText, warnings: [...first.warnings, 'Tabela HTML extraída como texto. Confira as linhas, as categorias e os valores antes de confirmar.']};
+  }
   const isPdf = buffer.subarray(0, 5).toString('ascii') === '%PDF-';
   const isZip = buffer.length >= 4 && buffer.readUInt32LE(0) === 0x04034b50;
   const isOle = buffer.subarray(0, 8).equals(Buffer.from('d0cf11e0a1b11ae1', 'hex'));

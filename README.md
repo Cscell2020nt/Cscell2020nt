@@ -234,7 +234,7 @@ Para atualizar uma instalação Windows, encerre o aplicativo com Ctrl+C e copie
 
 ## Anexos de produtos por vendedor (0.1.4)
 
-Em **Relatórios gerenciais → Relatórios de produtos por vendedor**, selecione o vendedor e as datas e anexe XLS, XLSX, CSV ou PDF com texto (até 10 MB). Os arquivos são guardados no banco SQLite da pasta `.data`, com responsável e período, e podem ser baixados por administradores. A lista acompanha o mês selecionado e o filtro do vendedor. O envio é auditado e não altera vendas, faturamento ou comissões.
+Em **Relatórios gerenciais → Relatórios de produtos por vendedor**, selecione o vendedor e as datas e anexe XLS, XLSX, CSV, HTML/HTM ou PDF com texto (até 10 MB). Os arquivos são guardados no banco SQLite da pasta `.data`, com responsável e período, e podem ser baixados por administradores. A lista acompanha o mês selecionado e o filtro do vendedor. O envio é auditado e não altera vendas, faturamento ou comissões.
 
 ## Leitura dos itens vendidos (0.1.5)
 
@@ -255,3 +255,12 @@ Na versão 0.1.6, classificações antigas de caixas de som são lidas como Aces
 ## Conferência de pendências (0.1.7)
 
 A confirmação permanece bloqueada enquanto houver produtos sem categoria. Use **Mostrar pendentes** para listar apenas esses itens; o filtro limpa a busca atual. Selecione Acessórios ou Celulares em cada linha, marque a confirmação do vendedor e período e salve. A tela mostra a quantidade restante e explica o motivo do bloqueio junto ao botão de confirmação.
+
+
+## Relatórios HTML e HTM (0.1.8)
+
+Os dois campos de envio aceitam `.html` e `.htm`. Em **Relatórios gerenciais**, anexe a listagem de produtos ao vendedor e período corretos e use **Conferir produtos**. A leitura reconhece as tabelas do relatório exportado, inclusive HTML antigo com acentos Windows-1252, entidades como `&nbsp;`, moeda `R$`, rodapé **Totais** e marcações de formatação antigas. Cabeçalhos e textos não são executados: scripts, estilos e recursos externos não são carregados. Downloads continuam sendo anexos protegidos.
+
+Tabelas de layout são ignoradas; páginas com os mesmos cabeçalhos são reunidas. Tabelas de relatórios diferentes no mesmo arquivo geram erro para evitar leitura parcial. Os limites de tamanho, linhas e colunas continuam valendo. Arquivos sem tabela legível ou dependentes de JavaScript não fornecem dados importáveis.
+
+Nos relatórios de produtos, diferenças de até **1 centavo** entre a soma dos itens e o rodapé são informadas na conferência e guardadas com o relatório. Os itens permanecem com seus valores originais; a diferença documentada pode conciliar o rodapé com as vendas gerais, sem acrescentar ou distribuir valores entre categorias. As comissões são calculadas sobre os itens, e o faturamento e o histórico de 90 dias continuam vindo das vendas gerais. Diferenças maiores ou quantidades divergentes bloqueiam a confirmação. Se o HTML não imprime o período, selecione as datas manualmente.

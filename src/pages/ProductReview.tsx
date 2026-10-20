@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import type { AppData, ProductReportItem, SellerReport } from '../../shared/types';
 import { money } from '../lib/format';
 import { api } from '../lib/api';
-export interface ProductPreview { items: ProductReportItem[]; revenueCents: number; quantity: number; startDate?: string; endDate?: string }
+export interface ProductPreview { items: ProductReportItem[]; revenueCents: number; quantity: number; startDate?: string; endDate?: string; warnings?: string[] }
 export default function ProductReview({report, preview, sellerName, onClose, onSave}: {report: SellerReport; preview: ProductPreview; sellerName: string; onClose: () => void; onSave: (report: SellerReport, data: AppData) => void}) {
   const [items, setItems] = useState(preview.items);
   const [from, setFrom] = useState(preview.startDate || report.startDate);
@@ -31,6 +31,7 @@ export default function ProductReview({report, preview, sellerName, onClose, onS
   return <section className="panel" style={{padding: 20, marginTop: 24}} aria-label="Conferência de produtos">
     <h3>Conferir produtos — {sellerName}</h3>
     <p>{items.length} linhas de produtos · {preview.quantity} unidades · <strong>{money(preview.revenueCents)}</strong></p>
+    {preview.warnings?.map(warning => <p className="management-notice" key={warning}>{warning}</p>)}
     <p className="muted">Confira as sugestões de categoria. Relógios, tablets e outros produtos sem regra definida exigem sua escolha. O valor utilizado é a coluna Total; o desconto já está incluído. Não há nova soma ao faturamento.</p>
     <div className="form-grid"><label className="field">Início dos produtos<input type="date" value={from} disabled={busy} onChange={e => setFrom(e.target.value)} /></label><label className="field">Fim dos produtos<input type="date" value={to} disabled={busy} onChange={e => setTo(e.target.value)} /></label></div>
     <div className="section-header" style={{flexWrap: 'wrap', gap: 12}}><span className={`badge ${pending ? 'badge-warning' : 'badge-success'}`}>{items.length - pending} de {items.length} produtos classificados</span><div className="management-actions"><button className="btn btn-ghost" type="button" disabled={busy || pending === 0} onClick={showPending}>Mostrar pendentes ({pending})</button>{onlyPending && <button className="btn btn-ghost" type="button" disabled={busy} onClick={() => setOnlyPending(false)}>Mostrar todos</button>}</div></div>

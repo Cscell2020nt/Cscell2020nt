@@ -98,3 +98,13 @@ test('caixas de som integram a meta de acessórios sem comissão antes de ultrap
   assert.equal(above.accessoryCommission, 30_003);
   assert.equal('speakers' in above, false);
 });
+
+test('arredondamento só concilia quando foi documentado no rodapé do relatório', () => {
+  const input = {sellers: [seller], summaries: [], sales: [sale('1', 'Acessórios', 1_100_001)], productReports: [{id: 'report', sellerId: seller.id, startDate: '2026-10-01', endDate: '2026-10-19', status: 'confirmed', roundingDifferenceCents: 1, items: [{category: 'accessories', quantity: 10, netCents: 1_100_000}]}]} as unknown as AppData;
+  const period = {from: '2026-10-01', to: '2026-10-31', asOf: '2026-10-19'};
+  const metric = computeCommissions(input, period, rules)[0];
+  assert.equal(metric.incomplete, false); assert.equal(metric.historyCents, 1_100_001);
+  assert.equal(metric.accessories.revenueCents, 1_100_000); assert.equal(metric.accessoryCommission, 33_000);
+  delete input.productReports![0].roundingDifferenceCents;
+  assert.equal(computeCommissions(input, period, rules)[0].incomplete, true);
+});

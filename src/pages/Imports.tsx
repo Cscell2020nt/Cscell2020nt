@@ -16,7 +16,7 @@ interface ImportsProps {
 
 type ModeChoice = ImportMode | 'automatic';
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const SUPPORTED_EXTENSION = /\.(csv|xlsx|xls|pdf)$/i;
+const SUPPORTED_EXTENSION = /\.(csv|xlsx|xls|pdf|html|htm)$/i;
 const MODES: { value: ModeChoice; label: string; description: string }[] = [
   { value: 'automatic', label: 'Automático', description: 'Identifica o formato' },
   { value: 'daily', label: 'Diário', description: 'Vendas de um dia' },
@@ -111,7 +111,7 @@ export function Imports({ data, onData, notify }: ImportsProps) {
   const selectFile = (selected: File | undefined) => {
     if (!selected || busy) return;
     if (!SUPPORTED_EXTENSION.test(selected.name)) {
-      setError('Formato não suportado. Envie um arquivo CSV, XLSX, XLS ou PDF.');
+      setError('Formato não suportado. Envie um arquivo CSV, XLSX, XLS, PDF ou HTML.');
       return;
     }
     if (selected.size > MAX_FILE_BYTES) {
@@ -302,12 +302,12 @@ export function Imports({ data, onData, notify }: ImportsProps) {
             <div className="imports-upload-grid">
               <section className="panel imports-upload-panel">
                 <div className="section-header"><div><h2>Seu próximo relatório começa aqui</h2><p className="muted">Selecione o arquivo de vendas exportado pelo seu sistema.</p></div></div>
-                <input ref={fileInput} id="sales-import-file" type="file" className="imports-file-input" accept=".csv,.xlsx,.xls,.pdf" disabled={busy} onChange={(event) => selectFile(event.target.files?.[0])} aria-label="Selecionar relatório de vendas" />
+                <input ref={fileInput} id="sales-import-file" type="file" className="imports-file-input" accept=".csv,.xlsx,.xls,.pdf,.html,.htm" disabled={busy} onChange={(event) => selectFile(event.target.files?.[0])} aria-label="Selecionar relatório de vendas" />
                 <label htmlFor="sales-import-file" className={`import-dropzone imports-dropzone ${dragging ? 'is-dragging' : ''} ${file ? 'has-file' : ''}`} tabIndex={busy ? -1 : 0} aria-disabled={busy} onKeyDown={keyboardUpload} onDragOver={(event) => event.preventDefault()} onDragEnter={(event) => { event.preventDefault(); dragDepth.current += 1; setDragging(true); }} onDragLeave={(event) => { event.preventDefault(); dragDepth.current -= 1; if (dragDepth.current <= 0) setDragging(false); }} onDrop={dropFile}>
                   <span className="imports-upload-icon">{file ? (file.name.toLowerCase().endsWith('.pdf') ? <FileText size={30} /> : <FileSpreadsheet size={30} />) : <UploadCloud size={31} />}</span>
                   <strong>{file ? file.name : 'Arraste seu arquivo até aqui'}</strong>
                   <span className="muted">{file ? `${fileSize(file.size)} · Clique para escolher outro arquivo` : <>ou <span className="imports-link">clique para selecionar</span> no computador</>}</span>
-                  <span className="imports-file-types"><span>CSV</span><span>XLSX / XLS</span><span>PDF</span><span className="imports-file-limit">Até 10 MB</span></span>
+                  <span className="imports-file-types"><span>CSV</span><span>XLSX / XLS</span><span>PDF</span><span>HTML / HTM</span><span className="imports-file-limit">Até 10 MB</span></span>
                 </label>
                 <div className="imports-mode-heading"><strong>Como deseja importar?</strong><span className="muted">Na dúvida, use o automático.</span></div>
                 <div className="imports-mode-options" role="group" aria-label="Modelo de importação">

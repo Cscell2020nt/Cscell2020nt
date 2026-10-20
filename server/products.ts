@@ -11,7 +11,7 @@ export function suggestProductCategory(description: string): ProductReportItem['
   return 'unknown';
 }
 function decimal(value: unknown, scale: number, label: string): number {
-  let normalized = String(value ?? '').trim();
+  let normalized = String(value ?? '').trim().replace(/^R\$\s*/i, '').replace(/\s/g, '');
   if (typeof value === 'number') normalized = String(value);
   else if (normalized.includes(',')) normalized = normalized.replace(/\./g, '').replace(',', '.');
   if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) throw new Error(`${label}: valor inválido.`);
@@ -31,7 +31,7 @@ export async function parseProductReport(buffer: Buffer, filename: string) {
   let footerQuantity: number | undefined, footerRevenue: number | undefined;
   for (const [index, row] of parsed.rows.entries()) {
     const product = String(row[description] ?? '').trim();
-    if (/^total(?: geral)?$/.test(key(product)) && (!code || !row[code])) {
+    if (/^(?:total(?: geral)?|totais)$/.test(key(product)) && (!code || !row[code])) {
       if (footerRevenue !== undefined) throw new Error('O relatório contém mais de um total geral.');
       footerQuantity = decimal(row[quantity], 1, 'Quantidade total'); footerRevenue = decimal(row[amount], 100, 'Total geral'); continue;
     }
@@ -44,14 +44,19 @@ export async function parseProductReport(buffer: Buffer, filename: string) {
   const revenueCents = items.reduce((sum, item) => sum + item.netCents, 0);
   const units = items.reduce((sum, item) => sum + item.quantity, 0);
   if (!Number.isSafeInteger(revenueCents) || !Number.isSafeInteger(units)) throw new Error('Total excede a precisão suportada.');
-  if (footerRevenue !== undefined && (footerRevenue !== revenueCents || footerQuantity !== units)) throw new Error('A soma dos produtos não confere com o TOTAL do relatório.');
+  const roundingDifferenceCents = footerRevenue === undefined ? 0 : footerRevenue - revenueCents;
+  if ((footerQuantity !== undefined && footerQuantity !== units) || Math.abs(roundingDifferenceCents) > 1) throw new Error('A soma dos produtos não confere com o TOTAL do relatório.');
+  const warnings = roundingDifferenceCents ? [`O rodapé difere da soma dos itens em ${roundingDifferenceCents} centavo(s). Os valores dos itens serão preservados, sem distribuir ou descontar essa diferença.`] : [];
   let startDate: string | undefined, endDate: string | undefined;
+  let referenceText = parsed.referenceText || '';
   if (/\.xlsx?$/i.test(filename)) {
     const book = XLSX.read(buffer, {type: 'buffer'});
-    const text = XLSX.utils.sheet_to_json<unknown[]>(book.Sheets[book.SheetNames[0]], {header: 1}).slice(0, 10).flat().join(' ');
-    const match = text.match(/Refer[eê]ncia\s+(\d{2}\/\d{2}\/\d{2,4})\s+a\s+(\d{2}\/\d{2}\/\d{2,4})/i);
+    referenceText = XLSX.utils.sheet_to_json<unknown[]>(book.Sheets[book.SheetNames[0]], {header: 1}).slice(0, 10).flat().join(' ');
+  }
+  if (referenceText) {
+    const match = referenceText.match(/Refer[eê]ncia\s+(\d{2}\/\d{2}\/\d{2,4})\s+a\s+(\d{2}\/\d{2}\/\d{2,4})/i);
     const iso = (value: string) => { const [d, m, y] = value.split('/'); const year = y.length === 2 ? Number(y) < 30 ? `20${y}` : `19${y}` : y; return `${year}-${m}-${d}`; };
     if (match) { startDate = iso(match[1]); endDate = iso(match[2]); }
   }
-  return {items, revenueCents, quantity: units, startDate, endDate};
+  return {items, revenueCents, quantity: units, startDate, endDate, roundingDifferenceCents, warnings};
 }

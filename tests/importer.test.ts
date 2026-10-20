@@ -437,3 +437,22 @@ test('enforces row limits and rejects XLSX zip directory expansion before parsin
   buffer.writeUInt32LE(IMPORT_LIMITS.expandedBytes + 1, central + 24);
   await assert.rejects(parseFile(buffer, 'bomb.xlsx'), /expansão/);
 });
+
+test('HTML lê tabelas reais com entidades, Windows-1252 e estrutura de layout sem executar scripts', async () => {
+  const html = '<html><head><style>table{color:red}</style><script>globalThis.htmlExecuted=true</script></head><body><table><tr><td><table><tr><th>Data</th><th>Vendedor</th><th>ID Venda</th><th>Valor Líquido</th></tr><tr><td>20/10/2026</td><td>Vitória</td><td>0001</td><td>R$&nbsp;1.234,56</td></tr></table></td></tr></table><img src="https://example.invalid/remote"></body></html>';
+  const table = await parseFile(Buffer.from(html, 'latin1'), 'vendas.HTM');
+  assert.equal(table.rows.length, 1); assert.equal(table.rows[0].Vendedor, 'Vitória');
+  assert.equal(table.rows[0]['ID Venda'], '0001');
+  assert.equal(table.rows[0]['Valor Líquido'], 'R$ 1.234,56');
+  assert.equal((globalThis as Record<string, unknown>).htmlExecuted, undefined);
+  const normalized = normalizeImport(table, {}, sellers, financiers);
+  assert.equal(normalized.issues.length, 0); assert.equal(normalized.sales[0].netCents, 123456);
+});
+test('HTML reúne páginas com os mesmos cabeçalhos e rejeita tabelas ambíguas ou células excessivas', async () => {
+  const page = (id: string) => `<table><tr><th>Vendedor</th><th>Total</th></tr><tr><td>${id}</td><td>100,00</td></tr></table>`;
+  assert.equal((await parseFile(Buffer.from(page('Ana') + page('Bruno')), 'paginas.html')).rows.length, 2);
+  await assert.rejects(parseFile(Buffer.from('<html>Sem tabela</html>'), 'vazio.htm'), /tabela/);
+  await assert.rejects(parseFile(Buffer.from('not html'), 'forjado.htm'), /HTML/);
+  await assert.rejects(parseFile(Buffer.from('<table><tr><td colspan="99999">Produto</td></tr></table>'), 'grande.htm'), /limite/);
+  await assert.rejects(parseFile(Buffer.from(page('Ana') + '<table><tr><th>Descrição</th><th>QTD</th><th>Total</th></tr><tr><td>Capa</td><td>1</td><td>10,00</td></tr></table>'), 'ambiguo.htm'), /diferentes/);
+});

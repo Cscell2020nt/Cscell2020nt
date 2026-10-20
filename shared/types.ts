@@ -32,7 +32,7 @@ export interface ImportOptions {
   mode?: ImportMode; mapping?: ColumnMapping; sellerAliases?: Record<string, string>;
   startDate?: string; endDate?: string; allowSummaryReplacement?: boolean;
 }
-export interface ParsedFile { columns: string[]; rows: Record<string, unknown>[]; warnings: string[] }
+export interface ParsedFile { referenceText?: string; columns: string[]; rows: Record<string, unknown>[]; warnings: string[] }
 export interface NormalizedImport {
   sales: Sale[]; summaries: ConsolidatedSummary[]; issues: ImportIssue[];
   warnings: string[]; unresolvedSellers: string[]; mapping: ColumnMapping;
@@ -77,4 +77,4 @@ export interface Analytics {
 }
 
 export interface ProductReportItem { id: string; code: string; product: string; quantity: number; netCents: number; category: 'accessories' | 'phones' | 'unknown' }
-export interface SellerReport { id: string; sellerId: string; startDate: string; endDate: string; filename: string; sizeBytes: number; uploadedAt: string; userName: string; items?: ProductReportItem[]; status?: 'confirmed' | 'superseded' }
+export interface SellerReport { id: string; sellerId: string; startDate: string; endDate: string; filename: string; sizeBytes: number; uploadedAt: string; userName: string; items?: ProductReportItem[]; roundingDifferenceCents?: number; status?: 'confirmed' | 'superseded' }

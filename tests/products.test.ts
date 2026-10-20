@@ -36,3 +36,17 @@ test('quantidades fracionadas e valores negativos não entram silenciosamente', 
   await assert.rejects(parseProductReport(Buffer.from('Descrição;QTD;Total\nCapa;1,5;10,00'), 'itens.csv'), /fracionada/);
   await assert.rejects(parseProductReport(Buffer.from('Descrição;QTD;Total\nCapa;1;-10,00'), 'itens.csv'), /inválido/);
 });
+
+test('HTM do sistema lê moeda, Totais e marcações antigas, preservando arredondamento documentado', async () => {
+  const html = '"<HTML><BODY><TABLE><TR><TD><TABLE><TR><TD>Nº/Tipo</TD><TD>Código</TD><TD>Descrição</TD><TD>Un</TD><TD>Vlr. Un</TD><TD>QTD</TD><TD>Desc.</TD><TD>Total</TD></TR><TR><TD>001-P</TD><TD>1</TD><TD>CAPAS VARIADAS</TD><TD></TD><TD>R$ 30,00</TD><TD>2</TD><TD>R$ 5,00</TD><TD>R$ 55,00</TD></TR><TR><TD></TD><TD></TD><TD>Totais</TD><TD></TD><TD></TD><TD><SIZE=8>2</TD><TD>R$ 5,00</TD><TD>R$ 55,01</TD></TR></TABLE></TD></TR></TABLE></BODY></HTML>"';
+  const result = await parseProductReport(Buffer.from(html, 'latin1'), 'vendedor.htm');
+  assert.equal(result.items.length, 1); assert.equal(result.quantity, 2);
+  assert.equal(result.revenueCents, 5500); assert.equal(result.roundingDifferenceCents, 1);
+  assert.equal(result.items[0].category, 'accessories'); assert.equal(result.warnings.length, 1);
+  await assert.rejects(parseProductReport(Buffer.from(html.replace('R$ 55,01', 'R$ 55,03'), 'latin1'), 'divergente.htm'), /TOTAL/);
+});
+test('HTML extrai a referência impressa sem usar texto de scripts', async () => {
+  const html = '<html><script>Referência 01/09/26 a 30/09/26</script><body><p>Referência 01/10/26 a 20/10/26</p><table><tr><th>Descrição</th><th>QTD</th><th>Total</th></tr><tr><td>Capa</td><td>1</td><td>R$ 10,00</td></tr></table></body></html>';
+  const result = await parseProductReport(Buffer.from(html), 'referencia.html');
+  assert.equal(result.startDate, '2026-10-01'); assert.equal(result.endDate, '2026-10-20');
+});

@@ -186,7 +186,8 @@ try {
 
   await navigate(page, 'Relatórios gerenciais');
   await page.getByLabel('Vendedor do relatório', {exact: true}).selectOption('mirelly');
-  await page.getByLabel('Arquivo de produtos vendidos', {exact: true}).setInputFiles({name: 'produtos-vendedor-e2e.csv', mimeType: 'text/csv', buffer: Buffer.from('Produto;Quantidade;Valor\nCapa;2;100,00')});
+  const htmlAttachment = '<html><body><table><tr><th>Descrição</th><th>QTD</th><th>Total</th></tr><tr><td>Capa</td><td>2</td><td>R$ 100,00</td></tr></table></body></html>';
+  await page.getByLabel('Arquivo de produtos vendidos', {exact: true}).setInputFiles({name: 'produtos-vendedor-e2e.htm', mimeType: 'text/html', buffer: Buffer.from(htmlAttachment)});
   const attached = page.waitForResponse(response => response.url().endsWith('/api/seller-reports') && response.request().method() === 'POST');
   await page.getByRole('button', {name: 'Anexar relatório do vendedor', exact: true}).click();
   const attachment = await json(await attached, 201);
@@ -195,7 +196,7 @@ try {
   const downloadedAttachment = page.waitForEvent('download');
   await page.getByRole('link', {name: 'Baixar anexo', exact: true}).click();
   const savedAttachment = await downloadedAttachment;
-  assert.equal(readFileSync(await savedAttachment.path()).toString(), 'Produto;Quantidade;Valor\nCapa;2;100,00');
+  assert.equal(readFileSync(await savedAttachment.path()).toString(), htmlAttachment);
   const unchanged = await json(await context.request.get('/api/data'));
   assert.equal(unchanged.sales.length, 5);
   console.log('E2E: relatório por vendedor anexado e baixado sem alterar vendas.');

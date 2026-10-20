@@ -62,7 +62,7 @@ export function computeCommissions(data: AppData, period: Period, rules: Commiss
       if (next !== afterReference.toISOString().slice(0, 10)) productWarnings.push('Faltam dias no detalhamento de produtos.');
       const detailTotal = Object.values(groups).reduce((sum, group) => sum + group.revenueCents, 0);
       const saleTotal = own.filter(sale => sale.date >= period.from && sale.date <= reference).reduce((sum, sale) => sum + sale.netCents, 0);
-      if (detailTotal !== saleTotal) productWarnings.push('O total dos produtos difere das vendas concluídas do vendedor neste período. Confira vendedor, datas, cancelamentos e atualize o relatório geral de vendas antes de fechar a comissão.');
+      if (detailTotal + productReports.reduce((sum, report) => sum + (report.roundingDifferenceCents || 0), 0) !== saleTotal) productWarnings.push('O total dos produtos difere das vendas concluídas do vendedor neste período. Confira vendedor, datas, cancelamentos e atualize o relatório geral de vendas antes de fechar a comissão.');
     }
     let historyCents = 0;
     let historyIncomplete = false;
@@ -79,6 +79,6 @@ export function computeCommissions(data: AppData, period: Period, rules: Commiss
     const accessoryBase = groups.accessories.revenueCents > 1_000_000 ? groups.accessories.revenueCents - (rules.accessoryBase === 'excess' ? 1_000_000 : 0) : 0;
     const accessoryCommission = Math.round(accessoryBase * 300 / 10_000);
     const phoneCommission = Math.round(groups.phones.revenueCents * phoneRate / 10_000);
-    return { seller, ...groups, productReportsUsed: productReports.length > 0, productWarnings: [...new Set(productWarnings)], missingSales, incomplete, historyIncomplete, historyFrom, reference, historyCents, phoneRate, accessoryCommission, phoneCommission, totalCents: accessoryCommission + phoneCommission };
+    return { seller, ...groups, productReportsUsed: productReports.length > 0, productRoundingDifferenceCents: productReports.reduce((sum, report) => sum + (report.roundingDifferenceCents || 0), 0), productWarnings: [...new Set(productWarnings)], missingSales, incomplete, historyIncomplete, historyFrom, reference, historyCents, phoneRate, accessoryCommission, phoneCommission, totalCents: accessoryCommission + phoneCommission };
   });
 }

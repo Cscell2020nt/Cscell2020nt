@@ -279,7 +279,7 @@ export function createApp(store = new Store()) {
       .refine(value => value.startDate <= value.endDate, 'O início deve ser anterior ao fim.')
       .parse(metadata);
     if (!store.get<Seller>('sellers', input.sellerId)) throw new HttpError(400, 'Selecione um vendedor cadastrado.');
-    if (!req.file) throw new HttpError(400, 'Selecione um relatório XLS, XLSX, CSV ou PDF.');
+    if (!req.file) throw new HttpError(400, 'Selecione um relatório XLS, XLSX, CSV, HTML ou PDF.');
     // Validate the file without turning product totals into new sales.
     await parseFile(req.file.buffer, req.file.originalname);
     const filename = req.file.originalname.replace(/\\/g, '/').split('/').at(-1)!.replace(/[\x00-\x1f\x7f]/g, '').slice(0, 180) || 'relatorio';
@@ -314,7 +314,7 @@ export function createApp(store = new Store()) {
     const overlapping = store.sellerReports().filter(report => report.id !== stored.report.id && report.status === 'confirmed' && report.sellerId === stored.report.sellerId && report.startDate <= input.endDate && report.endDate >= input.startDate);
     if (overlapping.length && !input.replace) throw new HttpError(409, 'Já existe um relatório confirmado para este período. Marque a substituição para evitar duplicação.');
     if (overlapping.some(report => report.startDate < input.startDate || report.endDate > input.endDate)) throw new HttpError(409, 'O novo relatório deve cobrir integralmente os períodos substituídos. Não é possível cortar um resumo de produtos.');
-    const report: SellerReport = {...stored.report, startDate: input.startDate, endDate: input.endDate, status: 'confirmed', items: parsed.items.map(item => ({...item, category: categories.get(item.id)!}))};
+    const report: SellerReport = {...stored.report, startDate: input.startDate, endDate: input.endDate, status: 'confirmed', roundingDifferenceCents: parsed.roundingDifferenceCents, items: parsed.items.map(item => ({...item, category: categories.get(item.id)!}))};
     store.transaction(() => {
       for (const old of overlapping) store.updateSellerReport({...old, status: 'superseded'});
       store.updateSellerReport(report);
