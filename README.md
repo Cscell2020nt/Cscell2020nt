@@ -264,3 +264,8 @@ Os dois campos de envio aceitam `.html` e `.htm`. Em **Relatórios gerenciais**,
 Tabelas de layout são ignoradas; páginas com os mesmos cabeçalhos são reunidas. Tabelas de relatórios diferentes no mesmo arquivo geram erro para evitar leitura parcial. Os limites de tamanho, linhas e colunas continuam valendo. Arquivos sem tabela legível ou dependentes de JavaScript não fornecem dados importáveis.
 
 Nos relatórios de produtos, diferenças de até **1 centavo** entre a soma dos itens e o rodapé são informadas na conferência e guardadas com o relatório. Os itens permanecem com seus valores originais; a diferença documentada pode conciliar o rodapé com as vendas gerais, sem acrescentar ou distribuir valores entre categorias. As comissões são calculadas sobre os itens, e o faturamento e o histórico de 90 dias continuam vindo das vendas gerais. Diferenças maiores ou quantidades divergentes bloqueiam a confirmação. Se o HTML não imprime o período, selecione as datas manualmente.
+
+
+## Precisão decimal do CSV (0.1.9)
+
+Exportações com valores textuais como `799.0001` e `2250.0002` são arredondadas para centavos com aviso na prévia. São aceitas de quatro a oito casas após um único separador decimal, sem misturar agrupamentos; formatos ambíguos com três casas continuam sujeitos à validação existente. O arredondamento textual usa os dígitos decimais diretamente. Um líquido explicitamente informado continua prevalecendo, sem subtrair novamente o desconto. Essa leitura não dispensa a conciliação entre o relatório geral e a listagem completa de produtos.

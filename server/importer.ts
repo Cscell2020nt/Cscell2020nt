@@ -307,7 +307,7 @@ export async function parseFile(buffer: Buffer, filename: string): Promise<Parse
   catch (error) { throw new ImportError(error instanceof Error ? error.message : 'Não foi possível ler o arquivo.'); }
 }
 
-function money(value: unknown): number {
+function money(value: unknown, onRounding?: (cents: number) => void): number {
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) throw new Error('Valor monetário inválido.');
     const result = Math.round(Number(`${value.toFixed(8)}e2`));
@@ -323,10 +323,12 @@ function money(value: unknown): number {
   if (/^\d{1,3}(\.\d{3})+(,\d{1,2})?$/.test(text)) normalized = text.replace(/\./g, '').replace(',', '.');
   else if (/^\d{1,3}(,\d{3})+\.\d{1,2}$/.test(text)) normalized = text.replace(/,/g, '');
   else if (/^\d+([,.]\d{1,2})?$/.test(text)) normalized = text.replace(',', '.');
+  else if (/^\d+[,.]\d{4,8}$/.test(text)) normalized = text.replace(',', '.');
   else throw new Error('Valor monetário inválido ou ambíguo; use 1.234,56 ou 1234.56.');
   const [integer, decimal = ''] = normalized.split('.');
-  const cents = Number(integer) * 100 + Number(decimal.padEnd(2, '0'));
+  const cents = Number(integer) * 100 + Number(decimal.padEnd(2, '0').slice(0, 2)) + (Number(decimal[2] || 0) >= 5 ? 1 : 0);
   if (!Number.isSafeInteger(cents)) throw new Error('Valor monetário excede a precisão suportada.');
+  if (/[1-9]/.test(decimal.slice(2))) onRounding?.(negative ? -cents : cents);
   return negative ? -cents : cents;
 }
 
@@ -427,7 +429,7 @@ export function normalizeImport(parsed: ParsedFile, options: ImportOptions = {},
     if (rowDate) allDates.push(rowDate);
     if (rowDate) noteShortYear(read('date'));
     const rowStatus = checked('status', () => status(read('status')), 'valid' as SaleStatus);
-    const amount = (field: ImportField, fallback = 0): number => empty(read(field)) ? fallback : checked(field, () => money(read(field)), 0);
+    const amount = (field: ImportField, fallback = 0): number => empty(read(field)) ? fallback : checked(field, () => money(read(field), rounded => warnings.push(`Linha ${row}: ${mapping[field] || field} com casas decimais extras (${string(read(field))}) arredondado para ${new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'}).format(rounded / 100)}. Confira o valor na prévia.`)), 0);
     let discount = amount('discount');
     const hasNet = !empty(read('net')), hasGross = !empty(read('gross'));
     if (!hasNet && !hasGross) issue(row, 'net', 'Valor da venda obrigatório.');

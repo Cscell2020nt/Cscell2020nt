@@ -456,3 +456,20 @@ test('HTML reúne páginas com os mesmos cabeçalhos e rejeita tabelas ambíguas
   await assert.rejects(parseFile(Buffer.from('<table><tr><td colspan="99999">Produto</td></tr></table>'), 'grande.htm'), /limite/);
   await assert.rejects(parseFile(Buffer.from(page('Ana') + '<table><tr><th>Descrição</th><th>QTD</th><th>Total</th></tr><tr><td>Capa</td><td>1</td><td>10,00</td></tr></table>'), 'ambiguo.htm'), /diferentes/);
 });
+
+test('descontos exportados com precisão extra são arredondados com aviso e preservam o líquido', () => {
+  for (const [discount, net, expected] of [['799.0001', '1600.0', 79900], ['2250.0002', '3349.0', 225000], ['799,0001', '1600.0', 79900]] as const) {
+    const result = normalize([{...basic, Desconto: discount, 'Valor Líquido': net}]);
+    assert.deepEqual(result.issues, []);
+    assert.equal(result.sales[0].discountCents, expected);
+    assert.equal(result.sales[0].netCents, Math.round(Number(net) * 100));
+    assert.ok(result.warnings.some(warning => warning.includes(discount) && warning.includes('arredondado')));
+  }
+});
+test('arredondamento decimal textual é exato, mantém milhares e rejeita formatos ambíguos', () => {
+  for (const [value, expected] of [['1.2344', 123], ['1.2350', 124], ['9.9999', 1000], ['1.234', 123400]] as const) {
+    const result = normalize([{...basic, 'Valor Líquido': value}]);
+    assert.deepEqual(result.issues, []); assert.equal(result.sales[0].netCents, expected);
+  }
+  for (const value of ['1,234', '1234.567', '1.2.3456', '1e4', '0.123456789']) assert.ok(normalize([{...basic, Desconto: value}]).issues.length > 0);
+});
