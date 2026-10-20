@@ -185,6 +185,20 @@ try {
   console.log('E2E: meta mensal salva pela interface para a competência atual.');
 
   await navigate(page, 'Relatórios gerenciais');
+  await page.getByLabel('Vendedor do relatório', {exact: true}).selectOption('mirelly');
+  await page.getByLabel('Arquivo de produtos vendidos', {exact: true}).setInputFiles({name: 'produtos-vendedor-e2e.csv', mimeType: 'text/csv', buffer: Buffer.from('Produto;Quantidade;Valor\nCapa;2;100,00')});
+  const attached = page.waitForResponse(response => response.url().endsWith('/api/seller-reports') && response.request().method() === 'POST');
+  await page.getByRole('button', {name: 'Anexar relatório do vendedor', exact: true}).click();
+  const attachment = await json(await attached, 201);
+  assert.equal(attachment.report.sellerId, 'mirelly');
+  await page.getByRole('cell', {name: 'Guardado · leitura pendente', exact: true}).waitFor();
+  const downloadedAttachment = page.waitForEvent('download');
+  await page.getByRole('link', {name: 'Baixar anexo', exact: true}).click();
+  const savedAttachment = await downloadedAttachment;
+  assert.equal(readFileSync(await savedAttachment.path()).toString(), 'Produto;Quantidade;Valor\nCapa;2;100,00');
+  const unchanged = await json(await context.request.get('/api/data'));
+  assert.equal(unchanged.sales.length, 5);
+  console.log('E2E: relatório por vendedor anexado e baixado sem alterar vendas.');
   for (const [label, extension] of [['Baixar PDF', 'pdf'], ['Baixar Excel', 'xlsx'], ['Baixar CSV', 'csv']]) {
     const downloaded = page.waitForEvent('download');
     await page.getByRole('button', {name: label, exact: true}).click();

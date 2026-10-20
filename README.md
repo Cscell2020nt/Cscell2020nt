@@ -230,3 +230,10 @@ Em **Vendas diárias**, o administrador pode escolher **Caixa de som · 3%** na 
 Instalações anteriores precisam **reimportar o relatório com Cliente**, mantendo o número original das vendas e autorizando atualizações na prévia. Isso preenche o campo nas vendas existentes sem duplicá-las. Quantidades não são recuperáveis por esse relatório e permanecem indisponíveis. Sem cliente, itens ou classificação manual, a tela informa dados incompletos. Resumos consolidados não fornecem composição de produtos.
 
 Para atualizar uma instalação Windows, encerre o aplicativo com Ctrl+C e copie os arquivos desta versão para a pasta da instalação original, preservando **.data** e **.env**. Execute INICIAR-WINDOWS.bat novamente. Não troque o banco por uma pasta nova vazia.
+
+
+## Anexos de produtos por vendedor (0.1.4)
+
+Em **Relatórios gerenciais → Relatórios de produtos por vendedor**, selecione o vendedor e as datas e anexe XLS, XLSX, CSV ou PDF com texto (até 10 MB). Os arquivos são guardados no banco SQLite da pasta `.data`, com responsável e período, e podem ser baixados por administradores. A lista acompanha o mês selecionado e o filtro do vendedor. O envio é auditado e não altera vendas, faturamento ou comissões.
+
+Nesta etapa, o anexo fica com **leitura pendente**: a importação dos produtos depende da adaptação ao modelo real do relatório. Não há processamento automático dos itens nem conciliação com vendas a partir desses anexos.

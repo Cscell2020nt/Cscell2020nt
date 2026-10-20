@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Server } from 'node:http';
-import type { AppData, ConsolidatedSummary, ImportBatch, ImportOptions, ImportPreview, NormalizedImport, ParsedFile, Sale, Seller, User } from '../shared/types.ts';
+import type { AppData, ConsolidatedSummary, ImportBatch, ImportOptions, ImportPreview, NormalizedImport, ParsedFile, Sale, Seller, SellerReport, User } from '../shared/types.ts';
 import { Store, type ImportSnapshot } from './store.ts';
 import { createSession, endSession, hashPassword, publicUser, requireAdmin, requireAuth, sameOrigin, sessionMiddleware, verifyPassword } from './auth.ts';
 import { normalizeImport, parseFile } from './importer.ts';
@@ -265,6 +265,34 @@ export function createApp(store = new Store()) {
       return {sellerId: seller.id, revenueCents: sales.reduce((sum, sale) => sum + sale.netCents, 0) + summaries.reduce((sum, row) => sum + row.revenueCents, 0), count: sales.length + summaries.reduce((sum, row) => sum + row.salesCount, 0)};
     }).sort((a, b) => b.revenueCents - a.revenueCents);
     res.json({ranking});
+  });
+  app.get('/api/seller-reports', requireAdmin, (_req, res) => {
+    res.json({reports: store.sellerReports()});
+  });
+  app.post('/api/seller-reports', requireAdmin, upload.single('file'), async (req, res) => {
+    let metadata: unknown;
+    try { metadata = JSON.parse(req.body.options || '{}'); }
+    catch { throw new HttpError(400, 'Dados do vendedor e período inválidos.'); }
+    const input = z.object({sellerId: z.string().min(1).max(100), startDate: isoDate, endDate: isoDate})
+      .refine(value => value.startDate <= value.endDate, 'O início deve ser anterior ao fim.')
+      .parse(metadata);
+    if (!store.get<Seller>('sellers', input.sellerId)) throw new HttpError(400, 'Selecione um vendedor cadastrado.');
+    if (!req.file) throw new HttpError(400, 'Selecione um relatório XLS, XLSX, CSV ou PDF.');
+    // Validate the file without turning product totals into new sales.
+    await parseFile(req.file.buffer, req.file.originalname);
+    const filename = req.file.originalname.replace(/\\/g, '/').split('/').at(-1)!.replace(/[\x00-\x1f\x7f]/g, '').slice(0, 180) || 'relatorio';
+    const report: SellerReport = {...input, id: randomUUID(), filename, sizeBytes: req.file.size, uploadedAt: new Date().toISOString(), userName: req.user!.name};
+    store.transaction(() => {
+      store.putSellerReport(report, req.file!.buffer);
+      store.audit(req.user!.name, 'seller-report.attached', `Relatório anexado ao vendedor ${input.sellerId}: ${input.startDate} a ${input.endDate}. Sem alteração no faturamento.`);
+    });
+    res.status(201).json({report});
+  });
+  app.get('/api/seller-reports/:id/file', requireAdmin, (req, res) => {
+    const stored = store.sellerReport(String(req.params.id));
+    if (!stored) throw new HttpError(404, 'Relatório não encontrado.');
+    res.setHeader('Cache-Control', 'no-store');
+    res.attachment(stored.report.filename).type('application/octet-stream').send(stored.content);
   });
   app.post('/api/imports/preview', requireAdmin, upload.single('file'), async (req, res) => {
     if (!req.file) throw new HttpError(400, 'Selecione um arquivo para importar.');

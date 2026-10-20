@@ -315,3 +315,44 @@ test('classificação manual exige administrador, é auditada e permanece na rei
     assert.equal((await set('speakers')).status, 403);
   } finally { await f.close(); }
 });
+
+test('anexos por vendedor persistem o arquivo, protegem acesso e não alteram vendas ou comissões', async () => {
+  const f = await fixture();
+  try {
+    const setup = await f.setup();
+    const cookie = setup.headers.getSetCookie().at(-1)!.split(';')[0];
+    const csv = 'Produto;Quantidade;Valor\nCapa;2;100,00';
+    const before = f.store.data();
+    const attach = (options: unknown, filename = 'produtos.csv') => {
+      const form = new FormData();
+      form.append('file', new Blob([csv], {type: 'text/csv'}), filename);
+      form.append('options', JSON.stringify(options));
+      return f.request('/api/seller-reports', {method: 'POST', body: form});
+    };
+    const options = {sellerId: 'mirelly', startDate: '2026-10-01', endDate: '2026-10-19'};
+    assert.equal((await attach({...options, sellerId: 'missing'})).status, 400);
+    assert.equal((await attach({...options, endDate: '2026-09-30'})).status, 400);
+    assert.equal((await attach(options, 'forjado.xls')).status, 422);
+    const attached = await attach(options);
+    assert.equal(attached.status, 201);
+    assert.equal(attached.body.report.sellerId, 'mirelly');
+    assert.deepEqual(f.store.data().sales, before.sales);
+    assert.deepEqual(f.store.data().summaries, before.summaries);
+    assert.equal(f.store.sellerReports().length, 1);
+    assert.equal(f.store.sellerReport(attached.body.report.id)!.content.toString(), csv);
+    const listed = await f.request('/api/seller-reports');
+    assert.equal(listed.body.reports[0].filename, 'produtos.csv');
+    const path = `/api/seller-reports/${attached.body.report.id}/file`;
+    const downloaded = await fetch(f.base + path, {headers: {cookie}});
+    assert.equal(downloaded.status, 200);
+    assert.ok(downloaded.headers.get('content-disposition')?.startsWith('attachment;'));
+    assert.equal(downloaded.headers.get('cache-control'), 'no-store');
+    assert.equal(await downloaded.text(), csv);
+    await f.post('/api/users', {name: 'Vendedor Anexos', email: 'seller-attachments@example.com', password: 'senha-vendedor-segura', sellerId: 'mirelly'});
+    await f.post('/api/logout', {});
+    await f.post('/api/login', {email: 'seller-attachments@example.com', password: 'senha-vendedor-segura'});
+    assert.equal((await attach(options)).status, 403);
+    assert.equal((await f.request('/api/seller-reports')).status, 403);
+    assert.equal((await f.request(path)).status, 403);
+  } finally { await f.close(); }
+});

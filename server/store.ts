@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, chmodSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { AppData, AuditEntry, Settings, Seller, User } from '../shared/types.ts';
+import type { AppData, AuditEntry, Settings, Seller, SellerReport, User } from '../shared/types.ts';
 
 export type EntityTable = 'sellers' | 'financiers' | 'sales' | 'summaries' | 'batches' | 'audit' | 'alerts';
 const tables: EntityTable[] = ['sellers', 'financiers', 'sales', 'summaries', 'batches', 'audit', 'alerts'];
@@ -24,6 +24,7 @@ export class Store {
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
     for (const table of tables) this.db.exec(`CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, payload TEXT NOT NULL)`);
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS seller_reports (id TEXT PRIMARY KEY, payload TEXT NOT NULL, content BLOB NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK (id=1), payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE COLLATE NOCASE, role TEXT NOT NULL CHECK(role IN ('admin','seller')), seller_id TEXT, password_hash TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL);
@@ -55,6 +56,16 @@ export class Store {
   replace<T extends {id: string}>(table: EntityTable, items: T[]) {
     this.db.exec(`DELETE FROM ${table}`);
     for (const item of items) this.put(table, item);
+  }
+  sellerReports(): SellerReport[] {
+    return (this.db.prepare('SELECT payload FROM seller_reports ORDER BY rowid DESC').all() as {payload: string}[]).map(row => JSON.parse(row.payload));
+  }
+  putSellerReport(report: SellerReport, content: Buffer) {
+    this.db.prepare('INSERT INTO seller_reports(id,payload,content) VALUES(?,?,?)').run(report.id, JSON.stringify(report), content);
+  }
+  sellerReport(id: string): {report: SellerReport; content: Buffer} | undefined {
+    const row = this.db.prepare('SELECT payload,content FROM seller_reports WHERE id=?').get(id) as {payload: string; content: Uint8Array} | undefined;
+    return row ? {report: JSON.parse(row.payload), content: Buffer.from(row.content)} : undefined;
   }
   settings(): Settings { return JSON.parse((this.db.prepare('SELECT payload FROM settings WHERE id=1').get() as {payload: string}).payload) as Settings; }
   setSettings(settings: Settings) {

@@ -74,3 +74,5 @@ export interface Analytics {
   sellers: SellerMetric[]; days: DayMetric[]; financiers: FinanceMetric[];
   hasSummaries: boolean; warnings: string[];
 }
+
+export interface SellerReport { id: string; sellerId: string; startDate: string; endDate: string; filename: string; sizeBytes: number; uploadedAt: string; userName: string }
