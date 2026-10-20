@@ -250,3 +250,8 @@ Reimportações cumulativas exigem marcar **Substituir relatórios** e precisam 
 
 
 Na versão 0.1.6, classificações antigas de caixas de som são lidas como Acessórios, inclusive em relatórios confirmados e snapshots de reversão. Valores e quantidades são preservados. A meta mensal de acessórios considera a soma de todos esses produtos.
+
+
+## Conferência de pendências (0.1.7)
+
+A confirmação permanece bloqueada enquanto houver produtos sem categoria. Use **Mostrar pendentes** para listar apenas esses itens; o filtro limpa a busca atual. Selecione Acessórios ou Celulares em cada linha, marque a confirmação do vendedor e período e salve. A tela mostra a quantidade restante e explica o motivo do bloqueio junto ao botão de confirmação.
