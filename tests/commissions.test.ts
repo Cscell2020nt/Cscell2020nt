@@ -72,3 +72,19 @@ test('categoria explícita por item prevalece sobre cliente', () => {
   assert.equal(result.accessories.quantity, 3);
   assert.equal(result.phones.revenueCents, 0);
 });
+
+test('produtos conferidos substituem a separação estimada sem duplicar receita ou histórico', () => {
+  const input = {sellers: [seller], summaries: [], sales: [sale('1', 'Celulares', 1_250_000)], productReports: [{id: 'report', sellerId: seller.id, startDate: '2026-10-01', endDate: '2026-10-19', status: 'confirmed', items: [
+    {category: 'accessories', quantity: 100, netCents: 1_100_000}, {category: 'phones', quantity: 1, netCents: 100_000}, {category: 'speakers', quantity: 2, netCents: 50_000},
+  ]}]} as unknown as AppData;
+  const period = {from: '2026-10-01', to: '2026-10-31', asOf: '2026-10-19'};
+  const result = computeCommissions(input, period, rules)[0];
+  assert.equal(result.productReportsUsed, true); assert.equal(result.incomplete, false);
+  assert.equal(result.accessories.quantity, 100); assert.equal(result.phones.quantity, 1);
+  assert.equal(result.historyCents, 1_250_000); assert.equal(result.totalCents, 35_750);
+  input.sales[0].netCents = 1_200_000;
+  assert.equal(computeCommissions(input, period, rules)[0].incomplete, true);
+  input.productReports![0].startDate = '2026-09-30';
+  const crossing = computeCommissions(input, period, rules)[0];
+  assert.equal(crossing.incomplete, true); assert.equal(crossing.phones.revenueCents, 0);
+});

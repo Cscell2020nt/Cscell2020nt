@@ -236,4 +236,14 @@ Para atualizar uma instalação Windows, encerre o aplicativo com Ctrl+C e copie
 
 Em **Relatórios gerenciais → Relatórios de produtos por vendedor**, selecione o vendedor e as datas e anexe XLS, XLSX, CSV ou PDF com texto (até 10 MB). Os arquivos são guardados no banco SQLite da pasta `.data`, com responsável e período, e podem ser baixados por administradores. A lista acompanha o mês selecionado e o filtro do vendedor. O envio é auditado e não altera vendas, faturamento ou comissões.
 
-Nesta etapa, o anexo fica com **leitura pendente**: a importação dos produtos depende da adaptação ao modelo real do relatório. Não há processamento automático dos itens nem conciliação com vendas a partir desses anexos.
+## Leitura dos itens vendidos (0.1.5)
+
+Após anexar, clique em **Conferir produtos**. O modelo **Listagem de Itens Vendidos** é reconhecido pelas colunas Descrição, QTD e Total (Código é opcional). A referência impressa em XLS/XLSX preenche as datas e deve coincidir com o período confirmado. O vendedor continua sendo selecionado explicitamente: esse modelo não o identifica dentro da planilha.
+
+A soma das quantidades e dos valores precisa conferir com o rodapé TOTAL, quando presente. O valor líquido vem da coluna **Total**, mesmo quando difere de Vlr. Un × QTD. O desconto não é subtraído novamente. Quantidades fracionadas, negativas, valores inválidos ou totais divergentes são bloqueados.
+
+A tela sugere Celulares, Acessórios e Caixas de som pelos nomes e permite corrigir cada linha. Tablets, relógios e outros itens sem regra exigem escolha manual. Confira todas as categorias e confirme que o relatório contém apenas vendas concluídas. As categorias confirmadas são preservadas ao reabrir a conferência.
+
+Relatórios confirmados fornecem as quantidades e valores da tela **Produtos e comissão**, substituindo a separação estimada pelo cliente. Eles não criam transações nem alteram o faturamento, ticket, metas, ranking ou o histórico de vendas usado para a faixa de 90 dias. Para fechar a estimativa, os relatórios devem cobrir o mês até a data de referência sem lacunas, cortes ou sobreposição, e o total deve conferir com as vendas concluídas do vendedor. Importe também o relatório geral atualizado para o mesmo período. Divergências suspendem a comissão estimada até a conferência.
+
+Reimportações cumulativas exigem marcar **Substituir relatórios** e precisam cobrir integralmente os períodos anteriores. Os anexos substituídos permanecem no histórico, mas seus itens deixam de compor a comissão. A conferência é administrativa e auditada; o vendedor recebe apenas os próprios produtos confirmados.

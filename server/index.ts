@@ -10,6 +10,7 @@ import type { Server } from 'node:http';
 import type { AppData, ConsolidatedSummary, ImportBatch, ImportOptions, ImportPreview, NormalizedImport, ParsedFile, Sale, Seller, SellerReport, User } from '../shared/types.ts';
 import { Store, type ImportSnapshot } from './store.ts';
 import { createSession, endSession, hashPassword, publicUser, requireAdmin, requireAuth, sameOrigin, sessionMiddleware, verifyPassword } from './auth.ts';
+import { parseProductReport } from './products.ts';
 import { normalizeImport, parseFile } from './importer.ts';
 
 class HttpError extends Error { constructor(readonly status: number, message: string) { super(message); } }
@@ -40,7 +41,7 @@ const importOptionsSchema = z.object({
 
 function visibleData(data: AppData, user: User): AppData {
   if (user.role === 'admin') return data;
-  return { ...data, sales: data.sales.filter(sale => sale.sellerId === user.sellerId), summaries: data.summaries.filter(summary => summary.sellerId === user.sellerId), batches: [], audit: [], alerts: [] };
+  return { ...data, productReports: data.productReports?.filter(report => report.sellerId === user.sellerId), sales: data.sales.filter(sale => sale.sellerId === user.sellerId), summaries: data.summaries.filter(summary => summary.sellerId === user.sellerId), batches: [], audit: [], alerts: [] };
 }
 function normalizeName(name: string) { return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').trim(); }
 function cleanSale(sale: Sale) {
@@ -287,6 +288,38 @@ export function createApp(store = new Store()) {
       store.audit(req.user!.name, 'seller-report.attached', `Relatório anexado ao vendedor ${input.sellerId}: ${input.startDate} a ${input.endDate}. Sem alteração no faturamento.`);
     });
     res.status(201).json({report});
+  });
+  app.get('/api/seller-reports/:id/preview', requireAdmin, async (req, res) => {
+    const stored = store.sellerReport(String(req.params.id));
+    if (!stored) throw new HttpError(404, 'Relatório não encontrado.');
+    try {
+      const parsed = await parseProductReport(stored.content, stored.report.filename);
+      const saved = new Map(stored.report.items?.map(item => [item.id, item.category]));
+      res.json({...parsed, items: parsed.items.map(item => ({...item, category: saved.get(item.id) || item.category}))});
+    }
+    catch (error) { throw new HttpError(422, error instanceof Error ? error.message : 'Não foi possível ler os produtos.'); }
+  });
+  app.put('/api/seller-reports/:id/process', requireAdmin, async (req, res) => {
+    const input = z.object({startDate: isoDate, endDate: isoDate, confirmedCompleted: z.literal(true), replace: z.boolean().optional(), categories: z.array(z.object({id: z.string(), category: z.enum(['accessories', 'phones', 'speakers'])})).max(50000)})
+      .refine(value => value.startDate <= value.endDate, 'Período inválido.').parse(req.body);
+    const stored = store.sellerReport(String(req.params.id));
+    if (!stored) throw new HttpError(404, 'Relatório não encontrado.');
+    let parsed;
+    try { parsed = await parseProductReport(stored.content, stored.report.filename); }
+    catch (error) { throw new HttpError(422, error instanceof Error ? error.message : 'Não foi possível ler os produtos.'); }
+    if ((parsed.startDate && parsed.startDate !== input.startDate) || (parsed.endDate && parsed.endDate !== input.endDate)) throw new HttpError(400, 'O período deve coincidir com a Referência impressa no relatório.');
+    const categories = new Map(input.categories.map(item => [item.id, item.category]));
+    if (categories.size !== parsed.items.length || input.categories.length !== parsed.items.length || parsed.items.some(item => !categories.has(item.id))) throw new HttpError(400, 'Classifique todos os produtos uma única vez.');
+    const overlapping = store.sellerReports().filter(report => report.id !== stored.report.id && report.status === 'confirmed' && report.sellerId === stored.report.sellerId && report.startDate <= input.endDate && report.endDate >= input.startDate);
+    if (overlapping.length && !input.replace) throw new HttpError(409, 'Já existe um relatório confirmado para este período. Marque a substituição para evitar duplicação.');
+    if (overlapping.some(report => report.startDate < input.startDate || report.endDate > input.endDate)) throw new HttpError(409, 'O novo relatório deve cobrir integralmente os períodos substituídos. Não é possível cortar um resumo de produtos.');
+    const report: SellerReport = {...stored.report, startDate: input.startDate, endDate: input.endDate, status: 'confirmed', items: parsed.items.map(item => ({...item, category: categories.get(item.id)!}))};
+    store.transaction(() => {
+      for (const old of overlapping) store.updateSellerReport({...old, status: 'superseded'});
+      store.updateSellerReport(report);
+      store.audit(req.user!.name, 'seller-report.processed', `Produtos conferidos para ${report.sellerId}, ${report.startDate} a ${report.endDate}. Faturamento preservado.`);
+    });
+    res.json({report, data: store.data()});
   });
   app.get('/api/seller-reports/:id/file', requireAdmin, (req, res) => {
     const stored = store.sellerReport(String(req.params.id));

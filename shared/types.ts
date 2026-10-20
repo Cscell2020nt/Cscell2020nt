@@ -53,6 +53,7 @@ export interface ImportBatch {
 export interface AuditEntry { id: string; at: string; userName: string; action: string; details: string }
 export interface Alert { id: string; date: string; type: string; message: string; read: boolean }
 export interface AppData {
+  productReports?: SellerReport[];
   sellers: Seller[]; financiers: Financier[]; sales: Sale[];
   summaries: ConsolidatedSummary[]; settings: Settings;
   batches: ImportBatch[]; audit: AuditEntry[]; alerts: Alert[];
@@ -75,4 +76,5 @@ export interface Analytics {
   hasSummaries: boolean; warnings: string[];
 }
 
-export interface SellerReport { id: string; sellerId: string; startDate: string; endDate: string; filename: string; sizeBytes: number; uploadedAt: string; userName: string }
+export interface ProductReportItem { id: string; code: string; product: string; quantity: number; netCents: number; category: 'accessories' | 'phones' | 'speakers' | 'unknown' }
+export interface SellerReport { id: string; sellerId: string; startDate: string; endDate: string; filename: string; sizeBytes: number; uploadedAt: string; userName: string; items?: ProductReportItem[]; status?: 'confirmed' | 'superseded' }

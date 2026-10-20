@@ -60,6 +60,9 @@ export class Store {
   sellerReports(): SellerReport[] {
     return (this.db.prepare('SELECT payload FROM seller_reports ORDER BY rowid DESC').all() as {payload: string}[]).map(row => JSON.parse(row.payload));
   }
+  updateSellerReport(report: SellerReport) {
+    this.db.prepare('UPDATE seller_reports SET payload=? WHERE id=?').run(JSON.stringify(report), report.id);
+  }
   putSellerReport(report: SellerReport, content: Buffer) {
     this.db.prepare('INSERT INTO seller_reports(id,payload,content) VALUES(?,?,?)').run(report.id, JSON.stringify(report), content);
   }
@@ -72,7 +75,7 @@ export class Store {
     this.db.prepare('INSERT INTO settings(id,payload) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').run(JSON.stringify(settings));
   }
   data(): AppData {
-    return { sellers: this.all('sellers'), financiers: this.all('financiers'), sales: this.all('sales'),
+    return { productReports: this.sellerReports().filter(report => report.status === 'confirmed'), sellers: this.all('sellers'), financiers: this.all('financiers'), sales: this.all('sales'),
       summaries: this.all('summaries'), batches: this.all('batches').reverse() as AppData['batches'],
       audit: this.all('audit').reverse() as AppData['audit'], alerts: this.all('alerts').reverse() as AppData['alerts'], settings: this.settings() };
   }

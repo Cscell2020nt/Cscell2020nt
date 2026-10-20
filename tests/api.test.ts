@@ -356,3 +356,37 @@ test('anexos por vendedor persistem o arquivo, protegem acesso e não alteram ve
     assert.equal((await f.request(path)).status, 403);
   } finally { await f.close(); }
 });
+
+test('conferência de produtos controla sobreposição, datas, categorias e acesso do vendedor', async () => {
+  const f = await fixture();
+  try {
+    await f.setup();
+    const before = f.store.data().sales;
+    async function attach() {
+      const form = new FormData(); form.append('file', new Blob(['Código;Descrição;QTD;Total\n1;CABO USB;2;100,00']), 'produtos.csv');
+      form.append('options', JSON.stringify({sellerId: 'mirelly', startDate: '2026-10-01', endDate: '2026-10-20'}));
+      return (await f.request('/api/seller-reports', {method: 'POST', body: form})).body.report;
+    }
+    const first = await attach();
+    const preview = await f.request(`/api/seller-reports/${first.id}/preview`);
+    assert.equal(preview.status, 200); assert.equal(preview.body.quantity, 2);
+    const body = {startDate: '2026-10-01', endDate: '2026-10-20', confirmedCompleted: true, categories: [{id: '0', category: 'accessories'}]};
+    const confirm = (id: string, payload: unknown = body) => f.request(`/api/seller-reports/${id}/process`, {method: 'PUT', body: JSON.stringify(payload)});
+    assert.equal((await confirm(first.id, {...body, confirmedCompleted: false})).status, 400);
+    assert.equal((await confirm(first.id, {...body, categories: []})).status, 400);
+    assert.equal((await confirm(first.id)).status, 200);
+    assert.deepEqual(f.store.data().sales, before);
+    assert.equal(f.store.data().productReports?.length, 1);
+    const next = await attach();
+    assert.equal((await confirm(next.id)).status, 409);
+    assert.equal((await confirm(next.id, {...body, startDate: '2026-10-02', replace: true})).status, 409);
+    assert.equal((await confirm(next.id, {...body, replace: true})).status, 200);
+    assert.equal(f.store.sellerReports().find(report => report.id === first.id)?.status, 'superseded');
+    assert.equal(f.store.data().productReports?.length, 1);
+    await f.post('/api/users', {name: 'Vendedor Produtos', email: 'seller-products@example.com', password: 'senha-vendedor-segura', sellerId: 'nicolas'});
+    await f.post('/api/logout', {}); await f.post('/api/login', {email: 'seller-products@example.com', password: 'senha-vendedor-segura'});
+    assert.equal((await confirm(next.id)).status, 403);
+    assert.equal((await f.request(`/api/seller-reports/${first.id}/preview`)).status, 403);
+    assert.deepEqual((await f.request('/api/data')).body.productReports, []);
+  } finally { await f.close(); }
+});
