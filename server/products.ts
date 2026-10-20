@@ -23,6 +23,7 @@ export async function parseProductReport(buffer: Buffer, filename: string) {
   const parsed = await parseFile(buffer, filename);
   const column = (names: string[]) => parsed.columns.find(name => names.includes(key(name)));
   const code = column(['codigo', 'codigo produto']);
+  const saleId = column(['n tipo', 'numero venda', 'numero da venda', 'id venda', 'venda', 'numero']);
   const description = column(['descricao', 'produto', 'descricao produto']);
   const quantity = column(['qtd', 'quantidade', 'qtde']);
   const amount = column(['total', 'total item', 'total do item', 'valor total']);
@@ -38,7 +39,7 @@ export async function parseProductReport(buffer: Buffer, filename: string) {
     if (!product) throw new Error(`Linha ${index + 1}: produto não informado.`);
     const units = decimal(row[quantity], 1, `Quantidade de ${product}`);
     if (units <= 0) throw new Error(`Quantidade de ${product}: deve ser maior que zero.`);
-    items.push({id: String(index), code: code ? String(row[code] ?? '') : '', product, quantity: units, netCents: decimal(row[amount], 100, `Total de ${product}`), category: suggestProductCategory(product)});
+    items.push({...(saleId && row[saleId] ? {externalId: String(row[saleId]).trim().replace(/-(?:P|S)$/i, '')} : {}), id: String(index), code: code ? String(row[code] ?? '') : '', product, quantity: units, netCents: decimal(row[amount], 100, `Total de ${product}`), category: suggestProductCategory(product)});
   }
   if (!items.length) throw new Error('Nenhum produto encontrado.');
   const revenueCents = items.reduce((sum, item) => sum + item.netCents, 0);

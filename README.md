@@ -269,3 +269,12 @@ Nos relatórios de produtos, diferenças de até **1 centavo** entre a soma dos 
 ## Precisão decimal do CSV (0.1.9)
 
 Exportações com valores textuais como `799.0001` e `2250.0002` são arredondadas para centavos com aviso na prévia. São aceitas de quatro a oito casas após um único separador decimal, sem misturar agrupamentos; formatos ambíguos com três casas continuam sujeitos à validação existente. O arredondamento textual usa os dígitos decimais diretamente. Um líquido explicitamente informado continua prevalecendo, sem subtrair novamente o desconto. Essa leitura não dispensa a conciliação entre o relatório geral e a listagem completa de produtos.
+
+
+## Complementos de serviços na comissão (0.1.10)
+
+Em **Relatórios gerenciais → Conferir produtos → Serviços que não vieram no relatório**, o administrador pode adicionar serviços que a loja considera acessórios. Informe número da venda, descrição, quantidade e valor líquido após desconto (por exemplo, `122,86`, sem separador de milhares). Os complementos seguem a mesma meta mensal de acessórios: 3% sobre toda a categoria somente ao ultrapassar R$ 10.000.
+
+A venda deve estar importada, concluída, vinculada ao mesmo vendedor e dentro do período. A listagem detalhada preserva o número da venda quando disponível, permitindo verificar se produtos e serviços excedem o líquido da transação. O total do relatório com complementos também não pode exceder as vendas do período; a conciliação normal continua exigindo que os totais confiram. Repetições de venda e descrição são bloqueadas.
+
+Os complementos são salvos e auditados junto ao relatório; não criam vendas nem alteram faturamento, ticket, ranking ou base de 90 dias. Reabrir a conferência mantém os complementos, e confirmar novamente substitui a composição do mesmo relatório em vez de acrescentá-la outra vez. Ao substituir um arquivo por outro, confira se os serviços ainda estão ausentes antes de adicioná-los.

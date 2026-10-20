@@ -417,3 +417,35 @@ test('registros e snapshots antigos de caixas de som são lidos como acessórios
     assert.equal(f.store.data().productReports?.[0].items?.[0].quantity, 2);
   } finally { await f.close(); }
 });
+
+test('serviços complementam acessórios sem duplicar vendas e respeitam os limites de cada transação', async () => {
+  const f = await fixture();
+  try {
+    await f.setup();
+    const sales = await f.preview('Data;Vendedor;ID Venda;Valor Líquido\n20/10/2026;Mirelly;A1;180,00\n20/10/2026;Mirelly;A2;100,00');
+    await f.post(`/api/imports/${sales.body.id}/confirm`, {});
+    const before = f.store.data().sales;
+    const form = new FormData();
+    form.append('file', new Blob(['Nº/Tipo;Código;Descrição;QTD;Total\nA1-P;1;CAPA;1;28,57\nA1-P;2;PELICULA;1;28,57']), 'produtos.csv');
+    form.append('options', JSON.stringify({sellerId: 'mirelly', startDate: '2026-10-01', endDate: '2026-10-20'}));
+    const attached = await f.request('/api/seller-reports', {method: 'POST', body: form});
+    const id = attached.body.report.id;
+    const body = {startDate: '2026-10-01', endDate: '2026-10-20', confirmedCompleted: true, categories: [{id: '0', category: 'accessories'}, {id: '1', category: 'accessories'}], supplements: [{externalId: 'A2', description: 'Limpeza', quantity: 1, netCents: 10000}, {externalId: 'A1', description: 'Power bank', quantity: 1, netCents: 12286}]};
+    const process = (input: unknown) => f.request(`/api/seller-reports/${id}/process`, {method: 'PUT', body: JSON.stringify(input)});
+    assert.equal((await process({...body, supplements: [{...body.supplements[0], externalId: 'missing'}]})).status, 400);
+    assert.equal((await process({...body, supplements: [{...body.supplements[1], netCents: 12287}]})).status, 400);
+    assert.equal((await process({...body, supplements: [body.supplements[0], body.supplements[0]]})).status, 400);
+    const saved = await process(body);
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.report.items.length, 4);
+    assert.equal(saved.body.report.items.reduce((sum: number, item: Json) => sum + item.netCents, 0), 28000);
+    assert.equal(saved.body.report.items.at(-1).category, 'accessories');
+    assert.deepEqual(f.store.data().sales, before);
+    const reopened = await f.request(`/api/seller-reports/${id}/preview`);
+    assert.equal(reopened.body.items.length, 2); assert.deepEqual(reopened.body.supplements, body.supplements);
+    assert.equal((await process(body)).status, 200);
+    assert.equal(f.store.data().productReports?.[0].items?.length, 4);
+    assert.deepEqual(f.store.data().sales, before);
+    assert.equal((await process({...body, startDate: '2026-10-01', endDate: '2026-10-19'})).status, 400);
+  } finally { await f.close(); }
+});

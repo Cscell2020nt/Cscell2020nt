@@ -1,9 +1,11 @@
 import { useRef, useState } from 'react';
-import type { AppData, ProductReportItem, SellerReport } from '../../shared/types';
+import type { AppData, ProductReportItem, ProductSupplement, SellerReport } from '../../shared/types';
 import { money } from '../lib/format';
 import { api } from '../lib/api';
-export interface ProductPreview { items: ProductReportItem[]; revenueCents: number; quantity: number; startDate?: string; endDate?: string; warnings?: string[] }
+import ServiceSupplements, { supplementCents, type SupplementDraft } from './ServiceSupplements';
+export interface ProductPreview { items: ProductReportItem[]; revenueCents: number; quantity: number; startDate?: string; endDate?: string; warnings?: string[]; supplements?: ProductSupplement[] }
 export default function ProductReview({report, preview, sellerName, onClose, onSave}: {report: SellerReport; preview: ProductPreview; sellerName: string; onClose: () => void; onSave: (report: SellerReport, data: AppData) => void}) {
+  const [supplements, setSupplements] = useState<SupplementDraft[]>((preview.supplements || []).map((item, i) => ({key: `saved_${i}`, externalId: item.externalId, description: item.description, quantity: item.quantity, amount: (item.netCents / 100).toFixed(2).replace('.', ',')})));
   const [items, setItems] = useState(preview.items);
   const [from, setFrom] = useState(preview.startDate || report.startDate);
   const [to, setTo] = useState(preview.endDate || report.endDate);
@@ -23,7 +25,8 @@ export default function ProductReview({report, preview, sellerName, onClose, onS
   async function confirm() {
     setBusy(true); setError('');
     try {
-      const result = await api<{report: SellerReport; data: AppData}>(`/api/seller-reports/${encodeURIComponent(report.id)}/process`, {method: 'PUT', body: JSON.stringify({startDate: from, endDate: to, confirmedCompleted: completed, replace, categories: items.map(({id, category}) => ({id, category}))})});
+      if (supplements.some(item => !item.externalId.trim() || item.description.trim().length < 2 || !Number.isInteger(item.quantity) || item.quantity <= 0)) throw new Error('Preencha venda, descrição e quantidade de todos os complementos.');
+      const result = await api<{report: SellerReport; data: AppData}>(`/api/seller-reports/${encodeURIComponent(report.id)}/process`, {method: 'PUT', body: JSON.stringify({startDate: from, endDate: to, confirmedCompleted: completed, replace, supplements: supplements.map(({externalId, description, quantity, amount}) => ({externalId, description, quantity, netCents: supplementCents(amount)})), categories: items.map(({id, category}) => ({id, category}))})});
       onSave(result.report, result.data);
     } catch (err) { setError(err instanceof Error ? err.message : 'Não foi possível confirmar.'); }
     finally { setBusy(false); }
@@ -39,6 +42,7 @@ export default function ProductReview({report, preview, sellerName, onClose, onS
     <div ref={table} className="table-wrap" style={{maxHeight: 440, overflow: 'auto'}}><table className="data-table"><thead><tr><th>Produto</th><th>Quantidade</th><th>Total vendido</th><th>Categoria</th></tr></thead><tbody>{visibleItems.map(item => <tr key={item.id}><td>{item.product}<small className="muted">Código {item.code || 'não informado'}</small></td><td>{item.quantity}</td><td>{money(item.netCents)}</td><td><select aria-label={`Categoria do produto ${item.id}`} value={item.category} disabled={busy} onChange={e => setItems(current => current.map(row => row.id === item.id ? {...row, category: e.target.value as ProductReportItem['category']} : row))}><option value="unknown">Escolha a categoria</option><option value="accessories">Acessórios</option><option value="phones">Celulares</option></select></td></tr>)}</tbody></table></div>
     {!visibleItems.length && <p className="muted">{onlyPending && !pending ? 'Todos os produtos já estão classificados. Você pode confirmar abaixo.' : 'Nenhum produto neste filtro. Altere a busca ou mostre todos os produtos.'}</p>}
     <p className="muted">{pending ? `${pending} produto(s) aguardando classificação.` : 'Todos os produtos classificados. Confira antes de confirmar.'}</p>
+    <ServiceSupplements rows={supplements} onChange={setSupplements} busy={busy} />
     <label className="check-field"><input type="checkbox" checked={completed} disabled={busy} onChange={e => setCompleted(e.target.checked)} />Confirmo que o arquivo pertence a {sellerName}, ao período informado e contém somente vendas concluídas, sem cancelamentos ou devoluções.</label>
     <label className="check-field"><input type="checkbox" checked={replace} disabled={busy} onChange={e => setReplace(e.target.checked)} />Substituir relatórios de produtos já confirmados neste período, mantendo apenas o novo detalhamento.</label>
     {error && <p className="form-error" role="alert">{error}</p>}

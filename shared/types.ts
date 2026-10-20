@@ -76,5 +76,6 @@ export interface Analytics {
   hasSummaries: boolean; warnings: string[];
 }
 
-export interface ProductReportItem { id: string; code: string; product: string; quantity: number; netCents: number; category: 'accessories' | 'phones' | 'unknown' }
-export interface SellerReport { id: string; sellerId: string; startDate: string; endDate: string; filename: string; sizeBytes: number; uploadedAt: string; userName: string; items?: ProductReportItem[]; roundingDifferenceCents?: number; status?: 'confirmed' | 'superseded' }
+export interface ProductSupplement { externalId: string; description: string; quantity: number; netCents: number }
+export interface ProductReportItem { externalId?: string; id: string; code: string; product: string; quantity: number; netCents: number; category: 'accessories' | 'phones' | 'unknown' }
+export interface SellerReport { id: string; sellerId: string; startDate: string; endDate: string; filename: string; sizeBytes: number; uploadedAt: string; userName: string; items?: ProductReportItem[]; supplements?: ProductSupplement[]; roundingDifferenceCents?: number; status?: 'confirmed' | 'superseded' }

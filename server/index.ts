@@ -296,12 +296,12 @@ export function createApp(store = new Store()) {
     try {
       const parsed = await parseProductReport(stored.content, stored.report.filename);
       const saved = new Map(stored.report.items?.map(item => [item.id, item.category]));
-      res.json({...parsed, items: parsed.items.map(item => ({...item, category: saved.get(item.id) || item.category}))});
+      res.json({...parsed, supplements: stored.report.supplements || [], items: parsed.items.map(item => ({...item, category: saved.get(item.id) || item.category}))});
     }
     catch (error) { throw new HttpError(422, error instanceof Error ? error.message : 'Não foi possível ler os produtos.'); }
   });
   app.put('/api/seller-reports/:id/process', requireAdmin, async (req, res) => {
-    const input = z.object({startDate: isoDate, endDate: isoDate, confirmedCompleted: z.literal(true), replace: z.boolean().optional(), categories: z.array(z.object({id: z.string(), category: z.enum(['accessories', 'phones'])})).max(50000)})
+    const input = z.object({startDate: isoDate, endDate: isoDate, confirmedCompleted: z.literal(true), replace: z.boolean().optional(), supplements: z.array(z.object({externalId: z.string().trim().min(1).max(100), description: z.string().trim().min(2).max(160), quantity: z.number().int().min(1).max(10000), netCents: money.refine(value => value > 0)}).strict()).max(200).optional(), categories: z.array(z.object({id: z.string(), category: z.enum(['accessories', 'phones'])})).max(50000)})
       .refine(value => value.startDate <= value.endDate, 'Período inválido.').parse(req.body);
     const stored = store.sellerReport(String(req.params.id));
     if (!stored) throw new HttpError(404, 'Relatório não encontrado.');
@@ -314,11 +314,32 @@ export function createApp(store = new Store()) {
     const overlapping = store.sellerReports().filter(report => report.id !== stored.report.id && report.status === 'confirmed' && report.sellerId === stored.report.sellerId && report.startDate <= input.endDate && report.endDate >= input.startDate);
     if (overlapping.length && !input.replace) throw new HttpError(409, 'Já existe um relatório confirmado para este período. Marque a substituição para evitar duplicação.');
     if (overlapping.some(report => report.startDate < input.startDate || report.endDate > input.endDate)) throw new HttpError(409, 'O novo relatório deve cobrir integralmente os períodos substituídos. Não é possível cortar um resumo de produtos.');
-    const report: SellerReport = {...stored.report, startDate: input.startDate, endDate: input.endDate, status: 'confirmed', roundingDifferenceCents: parsed.roundingDifferenceCents, items: parsed.items.map(item => ({...item, category: categories.get(item.id)!}))};
+    const supplements = input.supplements ?? stored.report.supplements ?? [];
+    const identity = (value: string) => /^\d+$/.test(value.trim()) ? value.trim().replace(/^0+(?=\d)/, '') : value.trim();
+    const allSales = store.data().sales;
+    const additions = new Map<string, number>();
+    const seenSupplements = new Set<string>();
+    for (const supplement of supplements) {
+      const id = identity(supplement.externalId);
+      const matching = allSales.filter(sale => identity(sale.externalId) === id && sale.sellerId === stored.report.sellerId && sale.status === 'valid' && sale.date >= input.startDate && sale.date <= input.endDate);
+      if (matching.length !== 1) throw new HttpError(400, `Venda ${supplement.externalId}: importe uma venda concluída do mesmo vendedor e período antes de complementar os itens.`);
+      const unique = `${id}|${supplement.description.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()}`;
+      if (seenSupplements.has(unique)) throw new HttpError(400, `Venda ${supplement.externalId}: complemento repetido. Confira a quantidade em vez de duplicar a linha.`);
+      seenSupplements.add(unique);
+      additions.set(id, (additions.get(id) || 0) + supplement.netCents);
+      const productTotal = parsed.items.filter(item => item.externalId && identity(item.externalId) === id).reduce((sum, item) => sum + item.netCents, 0);
+      if (productTotal + additions.get(id)! > matching[0].netCents) throw new HttpError(400, `Venda ${supplement.externalId}: produtos e complementos excedem o valor líquido da venda.`);
+    }
+    if (supplements.length) {
+      const detailTotal = parsed.revenueCents + supplements.reduce((sum, item) => sum + item.netCents, 0) + parsed.roundingDifferenceCents;
+      const salesTotal = allSales.filter(sale => sale.sellerId === stored.report.sellerId && sale.status === 'valid' && sale.date >= input.startDate && sale.date <= input.endDate).reduce((sum, sale) => sum + sale.netCents, 0);
+      if (!Number.isSafeInteger(detailTotal) || detailTotal > salesTotal) throw new HttpError(400, 'Os itens e complementos excedem as vendas concluídas deste vendedor no período. Confira se algum serviço já está no arquivo.');
+    }
+    const report: SellerReport = {...stored.report, startDate: input.startDate, endDate: input.endDate, status: 'confirmed', roundingDifferenceCents: parsed.roundingDifferenceCents, supplements, items: [...parsed.items.map(item => ({...item, category: categories.get(item.id)!})), ...supplements.map((item, index) => ({id: `service_${index}`, code: `Venda ${item.externalId}`, externalId: item.externalId, product: item.description, quantity: item.quantity, netCents: item.netCents, category: 'accessories' as const}))]};
     store.transaction(() => {
       for (const old of overlapping) store.updateSellerReport({...old, status: 'superseded'});
       store.updateSellerReport(report);
-      store.audit(req.user!.name, 'seller-report.processed', `Produtos conferidos para ${report.sellerId}, ${report.startDate} a ${report.endDate}. Faturamento preservado.`);
+      store.audit(req.user!.name, 'seller-report.processed', `Produtos conferidos para ${report.sellerId}, ${report.startDate} a ${report.endDate}. Faturamento preservado. ${supplements.length} complemento(s) informado(s).`);
     });
     res.json({report, data: store.data()});
   });
