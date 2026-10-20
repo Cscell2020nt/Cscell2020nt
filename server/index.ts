@@ -10,6 +10,7 @@ import type { Server } from 'node:http';
 import type { AppData, ConsolidatedSummary, ImportBatch, ImportOptions, ImportPreview, NormalizedImport, ParsedFile, Sale, Seller, SellerReport, User } from '../shared/types.ts';
 import { Store, type ImportSnapshot } from './store.ts';
 import { createSession, endSession, hashPassword, publicUser, requireAdmin, requireAuth, sameOrigin, sessionMiddleware, verifyPassword } from './auth.ts';
+import { normalizeLegacyCategories } from '../shared/legacy-categories.ts';
 import { parseProductReport } from './products.ts';
 import { normalizeImport, parseFile } from './importer.ts';
 
@@ -236,7 +237,7 @@ export function createApp(store = new Store()) {
     res.json({data: store.data()});
   });
   app.put('/api/sales/:id/commission-category', requireAdmin, (req, res) => {
-    const {category} = z.object({category: z.enum(['accessories', 'phones', 'speakers']).nullable()}).strict().parse(req.body);
+    const {category} = z.object({category: z.enum(['accessories', 'phones']).nullable()}).strict().parse(req.body);
     const sale = store.get<Sale>('sales', String(req.params.id));
     if (!sale) throw new HttpError(404, 'Venda não encontrada.');
     const updated = {...sale};
@@ -300,7 +301,7 @@ export function createApp(store = new Store()) {
     catch (error) { throw new HttpError(422, error instanceof Error ? error.message : 'Não foi possível ler os produtos.'); }
   });
   app.put('/api/seller-reports/:id/process', requireAdmin, async (req, res) => {
-    const input = z.object({startDate: isoDate, endDate: isoDate, confirmedCompleted: z.literal(true), replace: z.boolean().optional(), categories: z.array(z.object({id: z.string(), category: z.enum(['accessories', 'phones', 'speakers'])})).max(50000)})
+    const input = z.object({startDate: isoDate, endDate: isoDate, confirmedCompleted: z.literal(true), replace: z.boolean().optional(), categories: z.array(z.object({id: z.string(), category: z.enum(['accessories', 'phones'])})).max(50000)})
       .refine(value => value.startDate <= value.endDate, 'Período inválido.').parse(req.body);
     const stored = store.sellerReport(String(req.params.id));
     if (!stored) throw new HttpError(404, 'Relatório não encontrado.');
@@ -382,8 +383,8 @@ export function createApp(store = new Store()) {
       const latest = store.db.prepare("SELECT s.batch_id FROM import_snapshots s JOIN batches b ON b.id=s.batch_id WHERE json_extract(b.payload,'$.status')='confirmed' ORDER BY s.sequence DESC LIMIT 1").get() as {batch_id: string} | undefined;
       if (latest?.batch_id !== id) throw new HttpError(409, 'Reverta primeiro os lotes posteriores para preservar as alterações mais recentes.');
       const snapshot = store.db.prepare('SELECT before_payload,after_payload FROM import_snapshots WHERE batch_id=?').get(id) as {before_payload: string; after_payload: string} | undefined;
-      if (!snapshot || snapshotString(store.snapshot()) !== snapshot.after_payload) throw new HttpError(409, 'Os dados mudaram após esse lote. A reversão foi bloqueada para preservar alterações.');
-      const before = JSON.parse(snapshot.before_payload) as ImportSnapshot;
+      if (!snapshot || snapshotString(store.snapshot()) !== snapshotString(normalizeLegacyCategories(JSON.parse(snapshot.after_payload)) as ImportSnapshot)) throw new HttpError(409, 'Os dados mudaram após esse lote. A reversão foi bloqueada para preservar alterações.');
+      const before = normalizeLegacyCategories(JSON.parse(snapshot.before_payload)) as ImportSnapshot;
       store.replace('sales', before.sales); store.replace('summaries', before.summaries);
       store.put('batches', {...batch, status: 'reverted'}); store.audit(req.user!.name, 'import.reverted', `Lote revertido: ${batch.filename}.`);
     });

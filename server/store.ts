@@ -2,7 +2,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, chmodSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { normalizeLegacyCategories } from '../shared/legacy-categories.ts';
 import type { AppData, AuditEntry, Settings, Seller, SellerReport, User } from '../shared/types.ts';
+
+const parseStored = (payload: string) => normalizeLegacyCategories(JSON.parse(payload));
 
 export type EntityTable = 'sellers' | 'financiers' | 'sales' | 'summaries' | 'batches' | 'audit' | 'alerts';
 const tables: EntityTable[] = ['sellers', 'financiers', 'sales', 'summaries', 'batches', 'audit', 'alerts'];
@@ -43,11 +46,11 @@ export class Store {
     }
   }
   all<T>(table: EntityTable): T[] {
-    return (this.db.prepare(`SELECT payload FROM ${table} ORDER BY rowid`).all() as {payload: string}[]).map(row => JSON.parse(row.payload) as T);
+    return (this.db.prepare(`SELECT payload FROM ${table} ORDER BY rowid`).all() as {payload: string}[]).map(row => parseStored(row.payload) as T);
   }
   get<T>(table: EntityTable, id: string): T | undefined {
     const row = this.db.prepare(`SELECT payload FROM ${table} WHERE id=?`).get(id) as {payload: string} | undefined;
-    return row ? JSON.parse(row.payload) as T : undefined;
+    return row ? parseStored(row.payload) as T : undefined;
   }
   put<T extends { id: string }>(table: EntityTable, item: T) {
     this.db.prepare(`INSERT INTO ${table}(id,payload) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload`).run(item.id, JSON.stringify(item));
@@ -58,7 +61,7 @@ export class Store {
     for (const item of items) this.put(table, item);
   }
   sellerReports(): SellerReport[] {
-    return (this.db.prepare('SELECT payload FROM seller_reports ORDER BY rowid DESC').all() as {payload: string}[]).map(row => JSON.parse(row.payload));
+    return (this.db.prepare('SELECT payload FROM seller_reports ORDER BY rowid DESC').all() as {payload: string}[]).map(row => parseStored(row.payload));
   }
   updateSellerReport(report: SellerReport) {
     this.db.prepare('UPDATE seller_reports SET payload=? WHERE id=?').run(JSON.stringify(report), report.id);
@@ -68,9 +71,9 @@ export class Store {
   }
   sellerReport(id: string): {report: SellerReport; content: Buffer} | undefined {
     const row = this.db.prepare('SELECT payload,content FROM seller_reports WHERE id=?').get(id) as {payload: string; content: Uint8Array} | undefined;
-    return row ? {report: JSON.parse(row.payload), content: Buffer.from(row.content)} : undefined;
+    return row ? {report: parseStored(row.payload), content: Buffer.from(row.content)} : undefined;
   }
-  settings(): Settings { return JSON.parse((this.db.prepare('SELECT payload FROM settings WHERE id=1').get() as {payload: string}).payload) as Settings; }
+  settings(): Settings { return parseStored((this.db.prepare('SELECT payload FROM settings WHERE id=1').get() as {payload: string}).payload) as Settings; }
   setSettings(settings: Settings) {
     this.db.prepare('INSERT INTO settings(id,payload) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').run(JSON.stringify(settings));
   }

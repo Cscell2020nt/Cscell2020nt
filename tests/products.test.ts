@@ -27,8 +27,8 @@ test('sugestões distinguem acessórios de aparelhos e deixam produtos sem polí
   assert.equal(suggestProductCategory('FONE BLUETOOTH REDMI'), 'accessories');
   assert.equal(suggestProductCategory('REDMI BUDS 6'), 'accessories');
   assert.equal(suggestProductCategory('IPHONE 12 128GB'), 'phones');
-  assert.equal(suggestProductCategory('PARTYBOX ENCORE'), 'speakers');
-  assert.equal(suggestProductCategory('CX DE SOM AGOLD'), 'speakers');
+  assert.equal(suggestProductCategory('PARTYBOX ENCORE'), 'accessories');
+  assert.equal(suggestProductCategory('CX DE SOM AGOLD'), 'accessories');
   assert.equal(suggestProductCategory('TABLET CIDEA IMEI: exemplo'), 'unknown');
   assert.equal(suggestProductCategory('SMARTWATCH'), 'unknown');
 });

@@ -46,20 +46,18 @@ test('relatório sem itens e totais repetidos não inventam valores por categori
   assert.equal(calculate(report.sales).incomplete, true);
 });
 
-test('regra do cliente separa valores sem inventar unidades e caixa de som paga 3% sem meta', () => {
+test('regra do cliente e marcações de acessórios respeitam a meta mensal', () => {
   const consumer = sale('consumer', '', 1_100_000);
   consumer.items = [{product: '', category: '', quantity: null, netCents: 1_100_000}];
   consumer.customer = ' CONSUMIDOR FINAL ';
   const named = {...consumer, id: 'named', netCents: 200_000, customer: 'Cliente Exemplo'};
-  const speaker = {...named, id: 'speaker', netCents: 50_000, commissionCategory: 'speakers' as const};
+  const speaker = {...named, id: 'speaker', netCents: 50_000, commissionCategory: 'accessories' as const};
   const result = calculate([consumer, named, speaker]);
-  assert.equal(result.accessories.revenueCents, 1_100_000);
+  assert.equal(result.accessories.revenueCents, 1_150_000);
   assert.equal(result.phones.revenueCents, 200_000);
-  assert.equal(result.speakers.revenueCents, 50_000);
   assert.equal(result.accessories.missingQuantity, true);
   assert.equal(result.phones.missingQuantity, true);
-  assert.equal(result.speakerCommission, 1500);
-  assert.equal(result.accessoryCommission, 33_000);
+  assert.equal(result.accessoryCommission, 34_500);
   assert.equal(result.totalCents, 37_000);
   assert.equal(result.incomplete, false);
   const missing = {...named, id: 'empty', customer: '  '};
@@ -75,16 +73,28 @@ test('categoria explícita por item prevalece sobre cliente', () => {
 
 test('produtos conferidos substituem a separação estimada sem duplicar receita ou histórico', () => {
   const input = {sellers: [seller], summaries: [], sales: [sale('1', 'Celulares', 1_250_000)], productReports: [{id: 'report', sellerId: seller.id, startDate: '2026-10-01', endDate: '2026-10-19', status: 'confirmed', items: [
-    {category: 'accessories', quantity: 100, netCents: 1_100_000}, {category: 'phones', quantity: 1, netCents: 100_000}, {category: 'speakers', quantity: 2, netCents: 50_000},
+    {category: 'accessories', quantity: 100, netCents: 1_100_000}, {category: 'phones', quantity: 1, netCents: 100_000}, {category: 'accessories', quantity: 2, netCents: 50_000},
   ]}]} as unknown as AppData;
   const period = {from: '2026-10-01', to: '2026-10-31', asOf: '2026-10-19'};
   const result = computeCommissions(input, period, rules)[0];
   assert.equal(result.productReportsUsed, true); assert.equal(result.incomplete, false);
-  assert.equal(result.accessories.quantity, 100); assert.equal(result.phones.quantity, 1);
+  assert.equal(result.accessories.quantity, 102); assert.equal(result.phones.quantity, 1);
   assert.equal(result.historyCents, 1_250_000); assert.equal(result.totalCents, 35_750);
   input.sales[0].netCents = 1_200_000;
   assert.equal(computeCommissions(input, period, rules)[0].incomplete, true);
   input.productReports![0].startDate = '2026-09-30';
   const crossing = computeCommissions(input, period, rules)[0];
   assert.equal(crossing.incomplete, true); assert.equal(crossing.phones.revenueCents, 0);
+});
+
+test('caixas de som integram a meta de acessórios sem comissão antes de ultrapassar R$ 10 mil', () => {
+  const speaker = sale('speaker', 'Caixa de som', 50_000, 2);
+  const below = calculate([speaker]);
+  assert.equal(below.accessories.quantity, 2);
+  assert.equal(below.accessories.revenueCents, 50_000);
+  assert.equal(below.accessoryCommission, 0);
+  assert.equal(calculate([speaker, sale('acc', 'Acessórios', 950_000)]).totalCents, 0);
+  const above = calculate([speaker, sale('acc', 'Acessórios', 950_100)]);
+  assert.equal(above.accessoryCommission, 30_003);
+  assert.equal('speakers' in above, false);
 });

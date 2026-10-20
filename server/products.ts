@@ -4,7 +4,7 @@ import type { ProductReportItem } from '../shared/types.ts';
 const key = (value: unknown) => String(value ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 export function suggestProductCategory(description: string): ProductReportItem['category'] {
   const value = key(description);
-  if (/\b(caixa de som|cx de som|partybox|boombox)\b/.test(value)) return 'speakers';
+  if (/\b(caixa de som|cx de som|partybox|boombox)\b/.test(value)) return 'accessories';
   if (/^(capa|capas|pelicula|protetor|cabo|carregador|fonte|fone|chip|pilha|suporte|adaptador|mouse|antena|flex|modulo|microfone|controle|ventosas|mochila|airdots|power bank)\b/.test(value) || /^redmi buds\b/.test(value)) return 'accessories';
   if (/\btablet\b/.test(value)) return 'unknown';
   if (/\bimei\b/.test(value) || /^(aparelho|iphone|redmi|poco|xiaomi|samsung|motorola|moto|realme|oppo)\b/.test(value)) return 'phones';

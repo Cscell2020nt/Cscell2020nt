@@ -211,13 +211,13 @@ ambiente isolado e não precisa de outro Git worktree. O preparo reutilizável �
 ambiente são operações separadas de iniciar o processo local.
 
 
-## Produtos e comissão (0.1.3)
+## Produtos e comissão (0.1.6)
 
-O menu **Produtos e comissão** mostra unidades e valores líquidos por vendedor para as categorias Celulares, Acessórios e Caixas de som. O vendedor vê seus próprios dados; o administrador vê a equipe.
+O menu **Produtos e comissão** mostra unidades e valores líquidos por vendedor para as categorias Celulares e Acessórios. O vendedor vê seus próprios dados; o administrador vê a equipe.
 
 - Acessórios: acima de R$ 10.000 no mês, comissão de 3% sobre todo o valor mensal da categoria. Exatamente R$ 10.000 ainda não libera a comissão.
 - Celulares: 1,25%; sobe para 1,75% quando todas as vendas válidas do vendedor nos 90 dias encerrados na referência ultrapassam R$ 100.000. Exatamente R$ 100.000 permanece em 1,25%. A faixa na referência é aplicada ao valor mensal de celulares.
-- Caixas de som: 3% sobre o valor líquido, sem meta mínima.
+- Caixas de som integram Acessórios e seguem a mesma meta de R$ 10.000; não há categoria ou comissão separada.
 - Referência: hoje em meses em andamento ou o último dia do mês selecionado em meses encerrados. São 90 dias corridos incluindo a referência. Importe todo esse histórico para conferir a faixa; o sistema só conhece os dados importados.
 - A estimativa utiliza valores líquidos; pagamentos com troca não são descontados novamente. Canceladas, devolvidas e pendentes são excluídas.
 
@@ -225,7 +225,7 @@ Para detalhar categorias, exporte uma linha por item com **Número da venda, Dat
 
 Relatórios contendo somente totais de vendas, incluindo Relat2.xls, usam a regra da loja quando a coluna **Cliente** está presente: **Consumidor final → Acessórios; cliente com nome → Celulares**. A comparação ignora maiúsculas, acentos, espaços e pontuação. Não há classificação automática se o cliente estiver vazio. Categorias explícitas de itens têm prioridade sobre essa regra.
 
-Em **Vendas diárias**, o administrador pode escolher **Caixa de som · 3%** na coluna **Classificação da comissão**, corrigir para Celulares ou Acessórios ou voltar à opção Automática. A escolha aplica o valor total da venda à categoria e é auditada. Não altera o faturamento nem inventa unidades. Vendedores apenas consultam. Marcas manuais permanecem ao reimportar a mesma venda. Confira as caixas de som antes de fechar as comissões; inicialmente, nomes de clientes entram como celulares.
+Em **Vendas diárias**, o administrador pode escolher **Celulares** ou **Acessórios** na coluna **Classificação da comissão** ou voltar à opção Automática. A escolha aplica o valor total da venda à categoria e é auditada. Não altera o faturamento nem inventa unidades. Vendedores apenas consultam. Marcas manuais permanecem ao reimportar a mesma venda. Inicialmente, nomes de clientes entram como celulares; confira a classificação quando o relatório não detalha os produtos.
 
 Instalações anteriores precisam **reimportar o relatório com Cliente**, mantendo o número original das vendas e autorizando atualizações na prévia. Isso preenche o campo nas vendas existentes sem duplicá-las. Quantidades não são recuperáveis por esse relatório e permanecem indisponíveis. Sem cliente, itens ou classificação manual, a tela informa dados incompletos. Resumos consolidados não fornecem composição de produtos.
 
@@ -242,8 +242,11 @@ Após anexar, clique em **Conferir produtos**. O modelo **Listagem de Itens Vend
 
 A soma das quantidades e dos valores precisa conferir com o rodapé TOTAL, quando presente. O valor líquido vem da coluna **Total**, mesmo quando difere de Vlr. Un × QTD. O desconto não é subtraído novamente. Quantidades fracionadas, negativas, valores inválidos ou totais divergentes são bloqueados.
 
-A tela sugere Celulares, Acessórios e Caixas de som pelos nomes e permite corrigir cada linha. Tablets, relógios e outros itens sem regra exigem escolha manual. Confira todas as categorias e confirme que o relatório contém apenas vendas concluídas. As categorias confirmadas são preservadas ao reabrir a conferência.
+A tela sugere Celulares e Acessórios pelos nomes e permite corrigir cada linha. Tablets, relógios e outros itens sem regra exigem escolha manual. Confira todas as categorias e confirme que o relatório contém apenas vendas concluídas. As categorias confirmadas são preservadas ao reabrir a conferência.
 
 Relatórios confirmados fornecem as quantidades e valores da tela **Produtos e comissão**, substituindo a separação estimada pelo cliente. Eles não criam transações nem alteram o faturamento, ticket, metas, ranking ou o histórico de vendas usado para a faixa de 90 dias. Para fechar a estimativa, os relatórios devem cobrir o mês até a data de referência sem lacunas, cortes ou sobreposição, e o total deve conferir com as vendas concluídas do vendedor. Importe também o relatório geral atualizado para o mesmo período. Divergências suspendem a comissão estimada até a conferência.
 
 Reimportações cumulativas exigem marcar **Substituir relatórios** e precisam cobrir integralmente os períodos anteriores. Os anexos substituídos permanecem no histórico, mas seus itens deixam de compor a comissão. A conferência é administrativa e auditada; o vendedor recebe apenas os próprios produtos confirmados.
+
+
+Na versão 0.1.6, classificações antigas de caixas de som são lidas como Acessórios, inclusive em relatórios confirmados e snapshots de reversão. Valores e quantidades são preservados. A meta mensal de acessórios considera a soma de todos esses produtos.

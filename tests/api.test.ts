@@ -294,25 +294,25 @@ test('classificação manual exige administrador, é auditada e permanece na rei
     const path = `/api/sales/${id}/commission-category`;
     const set = (category: unknown) => f.request(path, {method: 'PUT', body: JSON.stringify({category})});
     assert.equal((await set('invalid')).status, 400);
-    const marked = await set('speakers');
+    const marked = await set('accessories');
     assert.equal(marked.status, 200);
     assert.equal(marked.body.data.sales[0].netCents, 100_000);
-    assert.equal(marked.body.data.sales[0].commissionCategory, 'speakers');
+    assert.equal(marked.body.data.sales[0].commissionCategory, 'accessories');
     assert.ok(marked.body.data.audit.some((entry: Json) => entry.action === 'sale.commission-category'));
     const repeated = await f.preview(csv);
     assert.equal(repeated.body.duplicateCount, 1);
     await f.post(`/api/imports/${repeated.body.id}/confirm`, {});
-    assert.equal(f.store.data().sales[0].commissionCategory, 'speakers');
+    assert.equal(f.store.data().sales[0].commissionCategory, 'accessories');
     const changed = await f.preview(csv.replace('1000,00', '1500,00'));
     assert.equal(changed.body.updateCount, 1);
     await f.post(`/api/imports/${changed.body.id}/confirm`, {allowUpdates: true});
-    assert.equal(f.store.data().sales[0].commissionCategory, 'speakers');
+    assert.equal(f.store.data().sales[0].commissionCategory, 'accessories');
     assert.equal(f.store.data().sales[0].netCents, 150_000);
     assert.equal((await set(null)).body.data.sales[0].commissionCategory, undefined);
     await f.post('/api/users', {name: 'Vendedor Exemplo', email: 'seller-class@example.com', password: 'senha-vendedor-segura', sellerId: 'mirelly'});
     await f.post('/api/logout', {});
     await f.post('/api/login', {email: 'seller-class@example.com', password: 'senha-vendedor-segura'});
-    assert.equal((await set('speakers')).status, 403);
+    assert.equal((await set('accessories')).status, 403);
   } finally { await f.close(); }
 });
 
@@ -388,5 +388,32 @@ test('conferência de produtos controla sobreposição, datas, categorias e aces
     assert.equal((await confirm(next.id)).status, 403);
     assert.equal((await f.request(`/api/seller-reports/${first.id}/preview`)).status, 403);
     assert.deepEqual((await f.request('/api/data')).body.productReports, []);
+  } finally { await f.close(); }
+});
+
+test('registros e snapshots antigos de caixas de som são lidos como acessórios sem bloquear reversão', async () => {
+  const f = await fixture();
+  try {
+    await f.setup();
+    const first = await f.preview(report()); await f.post(`/api/imports/${first.body.id}/confirm`, {});
+    const sale = f.store.data().sales[0];
+    await f.request(`/api/sales/${sale.id}/commission-category`, {method: 'PUT', body: JSON.stringify({category: 'accessories'})});
+    const next = await f.preview(report('500,00', 'válida', 'A2'));
+    const confirmed = await f.post(`/api/imports/${next.body.id}/confirm`, {});
+    // Simulate a database written by the previous application version.
+    f.store.db.prepare('UPDATE sales SET payload=? WHERE id=?').run(JSON.stringify({...f.store.data().sales.find(row => row.id === sale.id), commissionCategory: 'speakers'}), sale.id);
+    const snapshots = f.store.db.prepare('SELECT batch_id,before_payload,after_payload FROM import_snapshots').all() as {batch_id: string; before_payload: string; after_payload: string}[];
+    for (const snapshot of snapshots) f.store.db.prepare('UPDATE import_snapshots SET before_payload=?,after_payload=? WHERE batch_id=?').run(snapshot.before_payload.replaceAll('"commissionCategory":"accessories"', '"commissionCategory":"speakers"'), snapshot.after_payload.replaceAll('"commissionCategory":"accessories"', '"commissionCategory":"speakers"'), snapshot.batch_id);
+    assert.equal(f.store.data().sales.find(row => row.id === sale.id)?.commissionCategory, 'accessories');
+    const reverted = await f.post(`/api/imports/${confirmed.body.batch.id}/revert`, {});
+    assert.equal(reverted.status, 200);
+    assert.equal(reverted.body.data.sales.length, 1);
+    assert.equal(reverted.body.data.sales[0].commissionCategory, 'accessories');
+    assert.equal(reverted.body.data.sales[0].netCents, 100_000);
+    assert.equal((await f.request(`/api/sales/${sale.id}/commission-category`, {method: 'PUT', body: JSON.stringify({category: 'speakers'})})).status, 400);
+    const legacyReport = {id: 'legacy', sellerId: 'mirelly', startDate: '2026-10-01', endDate: '2026-10-19', status: 'confirmed', items: [{id: '0', code: '1', product: 'Caixa de som', quantity: 2, netCents: 100_000, category: 'speakers'}]};
+    f.store.db.prepare('INSERT INTO seller_reports(id,payload,content) VALUES(?,?,?)').run('legacy', JSON.stringify(legacyReport), Buffer.from('original'));
+    assert.equal(f.store.sellerReport('legacy')?.report.items?.[0].category, 'accessories');
+    assert.equal(f.store.data().productReports?.[0].items?.[0].quantity, 2);
   } finally { await f.close(); }
 });

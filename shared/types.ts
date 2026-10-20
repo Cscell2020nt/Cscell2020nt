@@ -10,7 +10,7 @@ export interface Sale {
   discountCents: number; netCents: number; tradeInCents: number;
   financedCents: number; paymentMethod: string; financierId: string;
   customer?: string;
-  commissionCategory?: 'accessories' | 'phones' | 'speakers';
+  commissionCategory?: 'accessories' | 'phones';
   items?: SaleItem[];
   status: SaleStatus; fingerprint: string; batchId: string;
 }
@@ -76,5 +76,5 @@ export interface Analytics {
   hasSummaries: boolean; warnings: string[];
 }
 
-export interface ProductReportItem { id: string; code: string; product: string; quantity: number; netCents: number; category: 'accessories' | 'phones' | 'speakers' | 'unknown' }
+export interface ProductReportItem { id: string; code: string; product: string; quantity: number; netCents: number; category: 'accessories' | 'phones' | 'unknown' }
 export interface SellerReport { id: string; sellerId: string; startDate: string; endDate: string; filename: string; sizeBytes: number; uploadedAt: string; userName: string; items?: ProductReportItem[]; status?: 'confirmed' | 'superseded' }

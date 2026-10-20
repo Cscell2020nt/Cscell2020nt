@@ -1,14 +1,14 @@
 import type { AppData, Period, Sale, SaleItem } from './types.ts';
 
-export type ProductGroup = 'accessories' | 'phones' | 'speakers' | 'unknown';
+export type ProductGroup = 'accessories' | 'phones' | 'unknown';
 export function productGroup(item: SaleItem): ProductGroup {
   const category = item.category.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
   if (/^(acessorios?|acessorios? de celular)$/.test(category)) return 'accessories';
-  if (/^caixas? de som$/.test(category)) return 'speakers';
+  if (/^caixas? de som$/.test(category)) return 'accessories';
   if (/^(celulares?|smartphones?|aparelhos?|telefones? celulares?)$/.test(category)) return 'phones';
   return 'unknown';
 }
-export const groupLabels = { accessories: 'Acessórios', phones: 'Celulares', speakers: 'Caixa de som' };
+export const groupLabels = { accessories: 'Acessórios', phones: 'Celulares' };
 export function commissionItems(sale: Sale): SaleItem[] | undefined {
   if (sale.commissionCategory) return [{ product: sale.product, category: groupLabels[sale.commissionCategory], quantity: null, netCents: sale.netCents }];
   if (sale.items?.some(item => productGroup(item) !== 'unknown')) return sale.items;
@@ -28,7 +28,7 @@ export function computeCommissions(data: AppData, period: Period, rules: Commiss
   const historyFrom = start.toISOString().slice(0, 10);
   const valid = [...new Map(data.sales.map(sale => [sale.id, sale])).values()].filter(sale => sale.status === 'valid');
   return data.sellers.map(seller => {
-    const groups = { accessories: { quantity: 0, revenueCents: 0, missingQuantity: false }, phones: { quantity: 0, revenueCents: 0, missingQuantity: false }, speakers: { quantity: 0, revenueCents: 0, missingQuantity: false } };
+    const groups = { accessories: { quantity: 0, revenueCents: 0, missingQuantity: false }, phones: { quantity: 0, revenueCents: 0, missingQuantity: false } };
     let missingSales = 0;
     const own = valid.filter(sale => sale.sellerId === seller.id);
     for (const sale of own.filter(sale => sale.date >= period.from && sale.date <= reference)) {
@@ -78,8 +78,7 @@ export function computeCommissions(data: AppData, period: Period, rules: Commiss
     const phoneRate = historyCents > 10_000_000 ? 175 : 125;
     const accessoryBase = groups.accessories.revenueCents > 1_000_000 ? groups.accessories.revenueCents - (rules.accessoryBase === 'excess' ? 1_000_000 : 0) : 0;
     const accessoryCommission = Math.round(accessoryBase * 300 / 10_000);
-    const speakerCommission = Math.round(groups.speakers.revenueCents * 300 / 10_000);
     const phoneCommission = Math.round(groups.phones.revenueCents * phoneRate / 10_000);
-    return { seller, ...groups, productReportsUsed: productReports.length > 0, productWarnings: [...new Set(productWarnings)], missingSales, incomplete, historyIncomplete, historyFrom, reference, historyCents, phoneRate, accessoryCommission, phoneCommission, speakerCommission, totalCents: accessoryCommission + phoneCommission + speakerCommission };
+    return { seller, ...groups, productReportsUsed: productReports.length > 0, productWarnings: [...new Set(productWarnings)], missingSales, incomplete, historyIncomplete, historyFrom, reference, historyCents, phoneRate, accessoryCommission, phoneCommission, totalCents: accessoryCommission + phoneCommission };
   });
 }
